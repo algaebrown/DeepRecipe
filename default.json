@@ -8,7 +8,8 @@
     "img_size": 256,
     "batch_size": 64,
     "num_workers": 8,
-     "vocabulary_threshold": 3
+     "vocabulary_threshold": 3,
+      "ingredient_to_index":"ing2idx.pickle"
   },
   "experiment": {
     "num_epochs": 10,

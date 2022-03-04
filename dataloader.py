@@ -8,6 +8,7 @@ from vocab import *
 from PIL import Image
 import nltk
 import numpy as np
+from collections import defaultdict
 
 
 # derived from PA4
@@ -29,10 +30,14 @@ def get_datasets(config_data):
 
     vocab_threshold = config_data['dataset']['vocabulary_threshold'] # TODO
     vocab = load_vocab(train_file_path, vocab_threshold)
+    
+    ing2index = defaultdict(lambda:0, 
+                            pickle.load(open(config_data['dataset']['ingredient_to_index'], 'rb'))
+                           )# category 0 is unknown
 
-    train_data_loader = get_recipe_dataloader(RecipeDataset(images_root_dir, train_file_path, vocab, img_size), config_data)
-    test_data_loader = get_recipe_dataloader(RecipeDataset(images_root_dir, test_file_path, vocab, img_size), config_data)
-    val_data_loader = get_recipe_dataloader(RecipeDataset(images_root_dir, val_file_path, vocab, img_size), config_data)
+    train_data_loader = get_recipe_dataloader(RecipeDataset(images_root_dir, train_file_path, vocab, img_size, ing2index), config_data)
+    test_data_loader = get_recipe_dataloader(RecipeDataset(images_root_dir, test_file_path, vocab, img_size, ing2index), config_data)
+    val_data_loader = get_recipe_dataloader(RecipeDataset(images_root_dir, val_file_path, vocab, img_size, ing2index), config_data)
 
     return vocab, train_data_loader, val_data_loader, test_data_loader
 
@@ -42,7 +47,7 @@ def find_img_path(imgid, root = '~/val'):
 class RecipeDataset(data.Dataset):
     '''for torch.utils.data.DataLoader'''
     
-    def __init__(self, root, pickle_path, vocab, img_size, transform=None):
+    def __init__(self, root, pickle_path, vocab, img_size, ing2index, transform=None):
         """Set the path for images, captions and vocabulary wrapper.
         Args:
             root: image directory.
@@ -52,6 +57,8 @@ class RecipeDataset(data.Dataset):
         """
         with open(pickle_path, 'rb') as f:
             dictionary = pickle.load(f)
+        self.ing2index = ing2index
+        self.n_category = max(list(self.ing2index.values()))
         self.root = root
         self.dict = dictionary
         self.ids = list(dictionary.keys())
@@ -83,10 +90,13 @@ class RecipeDataset(data.Dataset):
         
         title = self.dict[ann_id]['title'].lower()
         ing = ' '.join([i['text'] for i in self.dict[ann_id]['ingredients']]).lower()
+        ing_index = [self.ing2index[i] for i in self.dict[ann_id]['ingredient_list']]
         ins = ' '.join([i['text'] for i in self.dict[ann_id]['instructions']]).lower()
         
         
         img_id = random.choice(self.dict[ann_id]['images'])['id'] # can have multiple images, choose 1
+        ing_index_tensor = torch.zeros(self.n_category)
+        ing_index_tensor[np.array(ing_index)]=1
         
         path = find_img_path(img_id, root = self.root);
         image = Image.open(path).convert('RGB')
@@ -98,7 +108,7 @@ class RecipeDataset(data.Dataset):
         ing_tensor = self.sentence_to_tensor(ing)
         ins_tensor = self.sentence_to_tensor(ins)
         
-        return image, title_tensor, ing_tensor, ins_tensor, img_id
+        return image, ing_index_tensor, title_tensor, ing_tensor, ins_tensor, img_id
 
     def __len__(self):
         return len(self.ids)
@@ -130,11 +140,12 @@ def collate_fn(data):
     # Sort a data list by caption length (descending order).
     data.sort(key=lambda x: len(x[1]), reverse=True)
 
-    images, title, ing, ins, img_ids = zip(*data)
+    images, ing_tensor, title, ing, ins, img_ids = zip(*data)
     images = torch.stack(images, 0)
+    ing_tensors = torch.stack(ing_tensor, 0)
     
     titles = make_same_length(title)
     ings = make_same_length(ing)
     inss = make_same_length(ins)
     
-    return images, titles, ings, inss, img_ids
+    return images, ing_tensors, titles, ings, inss, img_ids
