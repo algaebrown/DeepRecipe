@@ -58,7 +58,7 @@ class RecipeDataset(data.Dataset):
         with open(pickle_path, 'rb') as f:
             dictionary = pickle.load(f)
         self.ing2index = ing2index
-        self.n_category = max(list(self.ing2index.values()))
+        self.n_category = max(list(self.ing2index.values()))+1 # 0 to 3143 total of 3144 numbers
         self.root = root
         self.dict = dictionary
         self.ids = list(dictionary.keys())
