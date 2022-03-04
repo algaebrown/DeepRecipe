@@ -1,0 +1,28 @@
+{
+  "experiment_name": "Baseline-512-1",
+  "dataset": {
+    "train_pickle": "train.pickle",
+    "test_pickle": "test.pickle",
+    "val_pickle": "rval.pickle",
+    "images_root_dir": "/home/hsher/val",
+    "img_size": 256,
+    "batch_size": 64,
+    "num_workers": 8,
+     "vocabulary_threshold": 3
+  },
+  "experiment": {
+    "num_epochs": 10,
+    "learning_rate": 5e-4
+  },
+  "model": {
+    "hidden_size": 512,
+    "embedding_size": 300,
+    "model_type": "LSTM",
+    "num_layers":1
+  },
+  "generation": {
+    "max_length": 20,
+    "deterministic": false,
+    "temperature": 0.1
+  }
+}
