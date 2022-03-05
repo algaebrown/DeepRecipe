@@ -58,14 +58,14 @@ class RecipeDataset(data.Dataset):
         with open(pickle_path, 'rb') as f:
             dictionary = pickle.load(f)
         self.ing2index = ing2index
-        self.n_category = max(list(self.ing2index.values()))+1 # 0 to 3143 total of 3144 numbers
+        self.n_category = max(list(self.ing2index.values()))
         self.root = root
         self.dict = dictionary
         self.ids = list(dictionary.keys())
         self.vocab = vocab
         self.normalize = transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) # TODO, might need to change
+            transforms.Normalize(mean=[0.3774,  0.1051, -0.1764], std=[1.1593, 1.1756, 1.1958]) # TODO, might need to change
         ])
 
         self.resize = transforms.Compose(
