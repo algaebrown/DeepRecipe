@@ -1,5 +1,5 @@
 {
-  "experiment_name": "Baseline-512-1",
+  "experiment_name": "Baseline",
   "dataset": {
     "train_pickle": "train.pickle",
     "test_pickle": "test.pickle",
