@@ -1,0 +1,33 @@
+{
+  "experiment_name": "ResNet-tagger",
+  "mode": "pretrain-resnet-tagger",
+  "X": "image", 
+  "y": "ingt", 
+  "n_fine_tune":3,
+  "dataset": {
+    "train_pickle": "dataset/train.pickle",
+    "test_pickle": "dataset/test.pickle",
+    "val_pickle": "dataset/rval.pickle",
+    "images_root_dir": "/home/hsher/val",
+    "img_size": 256,
+    "batch_size": 64,
+    "num_workers": 8,
+     "vocabulary_threshold": 3,
+      "ingredient_to_index":"dataset/ing2idx.pickle"
+  },
+  "experiment": {
+    "num_epochs": 13,
+    "learning_rate": 5e-4
+  },
+  "model": {
+    "hidden_size": 512,
+    "embedding_size": 300,
+    "model_type": "LSTM",
+    "num_layers":1
+  },
+  "generation": {
+    "max_length": 20,
+    "deterministic": false,
+    "temperature": 0.1
+  }
+}
