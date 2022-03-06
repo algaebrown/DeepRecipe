@@ -119,8 +119,9 @@ class RecipeDataset(data.Dataset):
             ing_index_tensor[np.array(ing_index)]=1
         else:
             if len(self.dict[ann_id]['ingredient_list'])==0:
-                unmasked_embed = torch.zeros((self.max_ingd, 50))
-                masked_embed = unmasked_embed[0,:]
+                # some ingredient lists are emptry
+                ing_embed = torch.zeros((self.max_ingd, 50))
+                masked_embed = ing_embed[0,:]
             else:
                 ing_embed = torch.tensor(np.stack([ingredient2embedding(i) for i in self.dict[ann_id]['ingredient_list']])).float()#n_ingd*50
                 # make same size
@@ -201,6 +202,7 @@ def collate_fn(data):
     images, ing_tensor, title, ing, ins, img_ids = zip(*data)
     
     images = torch.stack(images, 0)
+    ing_tensors = torch.stack(ing_tensor, 0)
     
     
     titles = make_same_length(title)
