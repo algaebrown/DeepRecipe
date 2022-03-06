@@ -1,0 +1,9 @@
+data/
+.DS_Store
+*cache*/
+.idea/
+.ipynb_checkpoints/
+*.pkl
+*.png
+*.csv
+*.pt

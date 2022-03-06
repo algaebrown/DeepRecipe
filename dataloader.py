@@ -84,7 +84,7 @@ class RecipeDataset(data.Dataset):
         self.vocab = vocab
         self.normalize = transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) # TODO, might need to change
+            transforms.Normalize(mean=[0.3774,  0.1051, -0.1764], std=[1.1593, 1.1756, 1.1958]) # TODO, might need to change
         ])
 
         self.resize = transforms.Compose(
