@@ -1,4 +1,4 @@
-data/
+dataset/
 .DS_Store
 *cache*/
 .idea/
@@ -7,3 +7,5 @@ data/
 *.png
 *.csv
 *.pt
+*.pickle
+savedVocab

@@ -10,6 +10,7 @@ import nltk
 import numpy as np
 from collections import defaultdict
 
+from file_utils import *
 
 # derived from PA4
 def get_recipe_dataloader(dataset, config_data):
@@ -21,12 +22,12 @@ def get_recipe_dataloader(dataset, config_data):
                      )
 
 def get_datasets(config_data):
-    images_root_dir = config_data['dataset']['images_root_dir']
+    images_root_dir = ROOT_DIR
     img_size = config_data['dataset']['img_size']
 
-    train_file_path = config_data['dataset']['train_pickle']
-    val_file_path = config_data['dataset']['val_pickle']
-    test_file_path = config_data['dataset']['test_pickle']
+    train_file_path = os.path.join(images_root_dir, config_data['dataset']['train_pickle'])
+    val_file_path = os.path.join(images_root_dir, config_data['dataset']['val_pickle'])
+    test_file_path = os.path.join(images_root_dir,config_data['dataset']['test_pickle'])
 
     vocab_threshold = config_data['dataset']['vocabulary_threshold'] # TODO
     vocab = load_vocab(train_file_path, vocab_threshold)
@@ -69,7 +70,7 @@ class RecipeDataset(data.Dataset):
         ])
 
         self.resize = transforms.Compose(
-            [transforms.Resize(img_size, interpolation=2), transforms.CenterCrop(img_size)])
+            [transforms.Resize(img_size, interpolation=transforms.InterpolationMode.BILINEAR), transforms.CenterCrop(img_size)])
         
     def sentence_to_tensor(self, caption):
         ''' given sentence, convert to tokens '''
@@ -138,6 +139,7 @@ def collate_fn(data):
         lengths: list; valid length for each padded caption.
     """
     # Sort a data list by caption length (descending order).
+
     data.sort(key=lambda x: len(x[1]), reverse=True)
 
     images, ing_tensor, title, ing, ins, img_ids = zip(*data)
@@ -147,5 +149,5 @@ def collate_fn(data):
     titles = make_same_length(title)
     ings = make_same_length(ing)
     inss = make_same_length(ins)
-    
+
     return images, ing_tensors, titles, ings, inss, img_ids

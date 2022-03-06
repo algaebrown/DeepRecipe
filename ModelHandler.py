@@ -18,21 +18,22 @@ ROOT_STATS_DIR = './experiment_data'
 # You only need to implement the main training logic of your experiment and implement train, val and test methods.
 # You are free to modify or restructure the code as per your convenience.
 class ModelHandler(object):
-    def __init__(self, name, verbose_freq=2000):
-        self.config_data = read_file_in_dir('./', name + '.json')
+    def __init__(self, config_name, model_name, verbose_freq=2000):
+        self.config_data = read_file_in_dir('./', config_name + '.json')
 
+        self.config_data['Model_Name'] = str(model_name)
         if self.config_data is None:
-            raise Exception("Configuration file doesn't exist: ", name)
+            raise Exception("Configuration file doesn't exist: ", config_name)
 
         self.device = torch.device(
             "cuda:0" if torch.cuda.is_available() else "cpu")
-        
-        self.__name = name
+
+        self.__name = config_name
         self.__experiment_dir = os.path.join(ROOT_STATS_DIR, self.__name)
         self.verbose_freq = verbose_freq
 
         # Load Datasets
-        self.__coco_test, self.__vocab, self.__train_loader, self.__val_loader, self.__test_loader = get_datasets(
+        self.__vocab, self.__train_loader, self.__val_loader, self.__test_loader = get_datasets(
             self.config_data)
 
         # Setup Experiment
@@ -45,7 +46,7 @@ class ModelHandler(object):
         self.__best_model = None
 
         # Init Model
-        self.__model = get_model(self.config_data, self.__vocab)
+        self.__model = get_model(model_name, self.config_data, self.__vocab)
 
         # TODO: Set these Criterion and Optimizers Correctly
         self.__criterion = torch.nn.CrossEntropyLoss()
@@ -56,9 +57,9 @@ class ModelHandler(object):
 
         # Load Experiment Data if available
         self.__load_experiment()
- 
 
     # Loads the experiment data if exists to resume training from last saved checkpoint.
+
     def __load_experiment(self):
         os.makedirs(ROOT_STATS_DIR, exist_ok=True)
 
@@ -73,8 +74,7 @@ class ModelHandler(object):
                 self.__experiment_dir, 'latest_model.pt'))
             self.__model.load_state_dict(state_dict['model'])
             self.__optimizer.load_state_dict(state_dict['optimizer'])
-        else:
-            os.makedirs(self.__experiment_dir)
+        
 
     def __init_model(self):
         if torch.cuda.is_available():
@@ -222,13 +222,17 @@ class ModelHandler(object):
         bleu4 = np.array(b4s).mean()
 
         result_str = "Test Performance: Loss: {}, Perplexity: {}, Bleu1: {}, Bleu4: {}".format(test_loss,
-                                                                                               torch.exp(test_loss),
+                                                                                               torch.exp(
+                                                                                                   test_loss),
                                                                                                bleu1,
                                                                                                bleu4)
         self.__log(result_str)
         return np.mean(test_loss_epoch), bleu1, bleu4
 
     def __save_model(self):
+        if not os.path.exists(self.__experiment_dir):
+            os.makedirs(self.__experiment_dir)
+
         root_model_path = os.path.join(
             self.__experiment_dir, 'latest_model.pt')
         model_dict = self.__model.state_dict()
@@ -237,6 +241,9 @@ class ModelHandler(object):
         torch.save(state_dict, root_model_path)
 
     def __record_stats(self, train_loss, val_loss):
+        if not os.path.exists(self.__experiment_dir):
+            os.makedirs(self.__experiment_dir)
+
         self.__training_losses.append(train_loss)
         self.__val_losses.append(val_loss)
 
@@ -247,10 +254,14 @@ class ModelHandler(object):
         write_to_file_in_dir(self.__experiment_dir,
                              'val_losses.txt', self.__val_losses)
 
-        write_to_file(os.path.join(self.__experiment_dir ,'config.json'), self.config_data)
+        write_to_file(os.path.join(self.__experiment_dir,
+                      'config.json'), self.config_data)
 
     def __log(self, log_str, file_name=None):
         print(log_str)
+        if not os.path.exists(self.__experiment_dir):
+            os.makedirs(self.__experiment_dir)
+
         log_to_file_in_dir(self.__experiment_dir, 'all.log', log_str)
         if file_name is not None:
             log_to_file_in_dir(self.__experiment_dir, file_name, log_str)

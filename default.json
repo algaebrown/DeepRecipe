@@ -1,15 +1,14 @@
 {
-  "experiment_name": "Baseline",
+  "experiment_name": "Baselines",
   "dataset": {
-    "train_pickle": "train.pickle",
-    "test_pickle": "test.pickle",
-    "val_pickle": "rval.pickle",
-    "images_root_dir": "/home/hsher/val",
+    "train_pickle": "data/train.pickle",
+    "test_pickle": "data/test.pickle",
+    "val_pickle": "data/rval.pickle",
     "img_size": 256,
     "batch_size": 64,
     "num_workers": 8,
      "vocabulary_threshold": 3,
-      "ingredient_to_index":"ing2idx.pickle"
+      "ingredient_to_index":"data/ing2idx.pickle"
   },
   "experiment": {
     "num_epochs": 10,

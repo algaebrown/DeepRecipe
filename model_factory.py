@@ -1,10 +1,6 @@
-from enum import Enum
 from Models.Baseline import *
+from model_utils import *
 
-
-class ModelName(Enum):
-    BASELINE = 1
-    IMPROVED = 2
 
 
 def get_model(model_name: ModelName, config_data, vocab):
@@ -13,7 +9,6 @@ def get_model(model_name: ModelName, config_data, vocab):
     model_type = config_data['model']['model_type']
     nlayer = config_data['model']['num_layers']
     # You may add more parameters if you want
-
     if model_name == ModelName.BASELINE:
         model = Baseline(embedding_size=embedding_size,
                          hidden_size=hidden_size,

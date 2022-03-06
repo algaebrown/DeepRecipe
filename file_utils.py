@@ -1,6 +1,9 @@
+# This file should be in root dir as of now
+
 import os
 import json
 
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def read_file(path):
     if os.path.isfile(path):
