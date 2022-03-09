@@ -22,3 +22,9 @@ They use slightly different dataloader options and collate function. It's not el
 
 see `try_dataloader` to find explanations
 
+
+## With the new design:
+- Whenver you create a new model, create a new class for that architecture.
+- Now add this new architecture to the models folder and the corresponding config json to the json folder.
+- Note that the config has a parameter called mode - which tells the model to be used to the modelHandler
+- So you have to come up with a string name. Use this name as identifier in the config json for the mode key and make the necessary updation in the model factory to create your class.

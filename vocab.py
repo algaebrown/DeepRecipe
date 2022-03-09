@@ -1,8 +1,9 @@
 ##Taken from https://github.com/yunjey/pytorch-tutorial/blob/master/tutorials/03-advanced/image_captioning/build_vocab.py
-import nltk
+import os
+import pickle
 from collections import Counter
-from pycocotools.coco import COCO
-import os, pickle, json, csv, copy
+
+import nltk
 
 
 # A simple wrapper class for Vocabulary. No changes are required in this file
@@ -45,7 +46,6 @@ def load_vocab(pickle_path, threshold):
 
 
 def build_vocab(pickle_path, threshold):
-    
     with open(pickle_path, 'rb') as f:
         train_data = pickle.load(f)
     counter = Counter()
@@ -54,7 +54,7 @@ def build_vocab(pickle_path, threshold):
         title = train_data[id_]['title'].lower()
         ing = ' '.join([i['text'] for i in train_data[id_]['ingredients']]).lower()
         ins = ' '.join([i['text'] for i in train_data[id_]['instructions']]).lower()
-        
+
         tokens = nltk.tokenize.word_tokenize(' '.join([title, ing, ins]))
         counter.update(tokens)
 

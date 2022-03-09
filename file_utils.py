@@ -1,9 +1,13 @@
 # This file should be in root dir as of now
 
-import os
 import json
+import os
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_PATH = os.path.join(ROOT_DIR, 'data')
+GLOVE_PATH = os.path.join(DATA_PATH, 'glove')
+IMAGES_PATH = os.path.join(DATA_PATH, 'images')
+
 
 def read_file(path):
     if os.path.isfile(path):

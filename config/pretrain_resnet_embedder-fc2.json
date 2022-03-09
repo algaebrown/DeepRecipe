@@ -1,13 +1,13 @@
 {
-  "experiment_name": "ResNet-tagger-fc2",
+  "experiment_name": "ResNet-embedder-fc2",
   "mode": "pretrain-resnet-tagger",
   "X": "image", 
   "y": "ingt", 
   "n_fine_tune":3,
   "dataset": {
-    "train_pickle": "dataset/train.pickle",
-    "test_pickle": "dataset/test.pickle",
-    "val_pickle": "dataset/rval.pickle",
+    "train_pickle": "data/train.pickle",
+    "test_pickle": "data/test.pickle",
+    "val_pickle": "data/rval.pickle",
     "images_root_dir": "/home/hsher/val",
     "img_size": 256,
     "batch_size": 64,

@@ -1,5 +1,4 @@
 from datetime import datetime
-from tabnanny import verbose
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,6 +8,8 @@ from caption_utils import *
 from dataloader import get_datasets
 from file_utils import *
 from model_factory import get_model
+from model_utils import LossFeature
+from classification_metrics import *
 
 ROOT_STATS_DIR = './experiment_data'
 
@@ -18,17 +19,16 @@ ROOT_STATS_DIR = './experiment_data'
 # You only need to implement the main training logic of your experiment and implement train, val and test methods.
 # You are free to modify or restructure the code as per your convenience.
 class ModelHandler(object):
-    def __init__(self, config_name, model_name, verbose_freq=2000):
-        self.config_data = read_file_in_dir('./', config_name + '.json')
+    def __init__(self, config_name, verbose_freq=2000):
+        self.config_data = read_file_in_dir('./config/', config_name + '.json')
 
-        self.config_data['Model_Name'] = str(model_name)
         if self.config_data is None:
             raise Exception("Configuration file doesn't exist: ", config_name)
 
         self.device = torch.device(
             "cuda:0" if torch.cuda.is_available() else "cpu")
 
-        self.__name = config_name
+        self.__name = self.config_data['experiment_name']
         self.__experiment_dir = os.path.join(ROOT_STATS_DIR, self.__name)
         self.verbose_freq = verbose_freq
 
@@ -42,14 +42,15 @@ class ModelHandler(object):
         self.__current_epoch = 0
         self.__training_losses = []
         self.__val_losses = []
+
         # Save your best model in this field and use this in test method.
         self.__best_model = None
 
         # Init Model
-        self.__model = get_model(model_name, self.config_data, self.__vocab)
+        self.__model = get_model(self.config_data, self.__vocab)
 
         # TODO: Set these Criterion and Optimizers Correctly
-        self.__criterion = torch.nn.CrossEntropyLoss()
+        self.__criterion = torch.nn.BCELoss()
         self.__optimizer = torch.optim.Adam(
             self.__model.parameters(), lr=self.config_data['experiment']['learning_rate'])
 
@@ -74,7 +75,6 @@ class ModelHandler(object):
                 self.__experiment_dir, 'latest_model.pt'))
             self.__model.load_state_dict(state_dict['model'])
             self.__optimizer.load_state_dict(state_dict['optimizer'])
-        
 
     def __init_model(self):
         if torch.cuda.is_available():
@@ -94,7 +94,12 @@ class ModelHandler(object):
         for epoch in range(start_epoch, self.__epochs):
             start_time = datetime.now()
             self.__current_epoch = epoch
-            train_loss = self.__train()
+            if self.__current_epoch > self.config_data["n_fine_tune"]:
+                fine_tune = False
+                print('start trainingin entire network')
+            else:
+                fine_tune = True
+            train_loss = self.__train(fine_tune= fine_tune)
             val_loss = self.__val()
 
             if val_loss < min_val_loss:
@@ -110,20 +115,22 @@ class ModelHandler(object):
             self.__save_model()
 
     # TODO: Perform one training iteration on the whole dataset and return loss value
-    def __train(self):
+    def __train(self, fine_tune=False):
         print(f'training on {self.device}')
         self.__model.train()
         training_loss = 0
         train_loss_epoch = []
-        for i, (images, captions, _) in enumerate(self.__train_loader):
+        for i, (images, title, ing_binary, ing, ins, ann_id) in enumerate(self.__train_loader):
             self.__optimizer.zero_grad()
+            target = self.get_target(title, ing_binary, ing, ins)
+
             images = images.to(self.device)
-            captions = captions.to(self.device)
+            target = target.to(self.device)
 
-            pred = self.__model(images, captions)
+            pred = self.__model(images, fine_tune=fine_tune)
 
-            # print(captions)
-            training_loss = self.__criterion(pred.transpose(1, 2), captions)
+
+            training_loss = self.__criterion(pred, target)
             train_loss_epoch.append(training_loss.item())
 
             if i % self.verbose_freq == 0:
@@ -140,11 +147,16 @@ class ModelHandler(object):
         val_loss_epoch = []
 
         with torch.no_grad():
-            for i, (images, captions, _) in enumerate(self.__val_loader):
+            for i, (images, title, ing_binary, ing, ins, img_id) in enumerate(self.__val_loader):
+                target = self.get_target(title, ing_binary, ing, ins)
+
                 images = images.to(self.device)
-                captions = captions.to(self.device)
-                pred = self.__model(images, captions)
-                val_loss = self.__criterion(pred.transpose(1, 2), captions)
+                target = target.to(self.device)
+
+                pred = self.__model(images)
+
+
+                val_loss = self.__criterion(pred, target)
                 val_loss_epoch.append(val_loss.item())
 
         return np.mean(val_loss_epoch)
@@ -178,56 +190,56 @@ class ModelHandler(object):
                 break
         return data
 
+    # TODO: Not yet implemented properly
     def test(self, use_best_model=True):
         self.__model.eval()
-
-        if use_best_model:  # use those from early stop
+        
+        if use_best_model: # use those from early stop
             print('=== Using best model from early stop ===')
-            best_model_path = os.path.join(
-                self.__experiment_dir, 'best_model.pt')
+            best_model_path = os.path.join(self.__experiment_dir, 'best_model.pt')
             self.__model.load_state_dict(torch.load(best_model_path))
-
+        
         test_loss = 0
         bleu1 = 0
         bleu4 = 0
         test_loss_epoch = []
+        scores = []
         with torch.no_grad():
             b1s = []
             b4s = []
-            for iter_, (images, captions, img_ids) in enumerate(self.__test_loader):
+            for iter_, (images, title, ing_binary, ing, ins, img_id) in enumerate(self.__test_loader):
+                target = self.get_target(title, ing_binary, ing, ins)
+
                 images = images.to(self.device)
-                captions = captions.to(self.device)
-                pred = self.__model(images, captions)
-                test_loss = self.__criterion(pred.transpose(1, 2), captions)
+                target = target.to(self.device)
+            
+                pred = self.__model(images)
+                
+                test_loss = self.__criterion(pred, target)
                 test_loss_epoch.append(test_loss.item())
+                
+                
 
                 if iter_ % self.verbose_freq == 0:
                     print(f'batch{iter_}, {test_loss}')
+                
+                evl=calculate_metrics(pred.cpu().detach().numpy(), ingt.cpu().detach().numpy())
+                evl = evl.replace(0, np.nan) # when no class is there
+                scores.append(evl.values)
 
-                # generate caption: generated_words is of size [batch_size * max_length], each element is a word index
-                if self.__generation_config["deterministic"]:
-                    generated_words = self.__model.generate_caption(images, size=self.__generation_config["max_length"],
-                                                                    mode='deterministic', gamma=None)
-                else:
-                    generated_words = self.__model.generate_caption(images, size=self.__generation_config["max_length"],
-                                                                    mode='stochastic', gamma=self.__generation_config["temperature"])
-
-                # COMPUTE BLEU SCORE
-                b1, b4, _ = compute_blue_score(
-                    img_ids, generated_words, self.__vocab, self.__coco_test, verbose=(iter_ % self.verbose_freq == 0))
-                b1s += b1
-                b4s += b4
-
-        bleu1 = np.array(b1s).mean()
-        bleu4 = np.array(b4s).mean()
-
-        result_str = "Test Performance: Loss: {}, Perplexity: {}, Bleu1: {}, Bleu4: {}".format(test_loss,
-                                                                                               torch.exp(
-                                                                                                   test_loss),
-                                                                                               bleu1,
-                                                                                               bleu4)
+                
+                # TODO:  class specific precision and recall
+                
+        mean_test_loss = np.mean(test_loss_epoch)
+        mean_evl = np.nanmean(np.stack(scores), axis = 0)
+        evl_df = pd.DataFrame(mean_evl, index = evl.index, columns = evl.columns)
+        evl_df.to_csv(os.path.join(self.__experiment_dir, f'cls_eval_{self.__current_epoch}.csv'))
+        
+        result_str = "Test Performance: Loss: {}".format(mean_test_loss)
         self.__log(result_str)
-        return np.mean(test_loss_epoch), bleu1, bleu4
+
+        return mean_test_loss, mean_evl
+
 
     def __save_model(self):
         if not os.path.exists(self.__experiment_dir):
@@ -255,7 +267,7 @@ class ModelHandler(object):
                              'val_losses.txt', self.__val_losses)
 
         write_to_file(os.path.join(self.__experiment_dir,
-                      'config.json'), self.config_data)
+                                   'config.json'), self.config_data)
 
     def __log(self, log_str, file_name=None):
         print(log_str)
@@ -269,7 +281,7 @@ class ModelHandler(object):
     def __log_epoch_stats(self, start_time):
         time_elapsed = datetime.now() - start_time
         time_to_completion = time_elapsed * \
-            (self.__epochs - self.__current_epoch - 1)
+                             (self.__epochs - self.__current_epoch - 1)
         train_loss = self.__training_losses[self.__current_epoch]
         val_loss = self.__val_losses[self.__current_epoch]
         summary_str = "Epoch: {}, Train Loss: {}, Val Loss: {}, Took {}, ETA: {}\n"
@@ -289,5 +301,18 @@ class ModelHandler(object):
         plt.savefig(os.path.join(self.__experiment_dir, "stat_plot.png"))
         plt.show()
 
-    def get_loss(self):
-        return self.__training_losses, self.__val_losses
+    def get_target(self, title, ing_binary, ing, ins,):
+        target_feature= self.__model.get_target_feature()
+        if target_feature == LossFeature.TITLE:
+            target = title
+        elif target_feature == LossFeature.INGREDIENT_EMBEDDING:
+            target = ing_binary
+        elif target_feature == LossFeature.INGREDIENT:
+            target = ing
+        elif target_feature == LossFeature.INSTRUCTIONS:
+            target = ins
+        elif target_feature == LossFeature.MASK:
+            # TODO: we will have to implement the mask thing here
+            target = None
+
+        return target
