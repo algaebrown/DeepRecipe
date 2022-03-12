@@ -22,10 +22,12 @@ def ingredient2embedding(ingd, emb_dim=50):
     wheat flour -> [1,0,0.5,1,2,0]
     '''
     sum_embedding = np.zeros(emb_dim)
-    for word in ingd:
+    for word in ingd.split(' '):
+        word = word.lower().replace('\'s', '').replace(',', '').replace('.', '').replace('\'', '')
         try:
             sum_embedding += glove[word]
         except:
+            #print(f'{word} not exist')
             pass
     return sum_embedding
 
@@ -52,6 +54,31 @@ def vocab2matrix(vocab, emd_dim=50):
 
 def create_emb_layer(vocab, trainable=True):
     weights_matrix = vocab2matrix(vocab)
+
+    num_embeddings, embedding_dim = weights_matrix.size()
+    emb_layer = nn.Embedding(num_embeddings, embedding_dim)  # vocab (our own) index -> glove vector
+    emb_layer.load_state_dict({'weight': weights_matrix})
+    if True:
+        emb_layer.weight.requires_grad = True
+
+    return emb_layer, num_embeddings, embedding_dim
+
+def create_ing_emb_layer(config_data, trainable=True):
+    ''' create ingredient embedding, ingredient index from ing2index -> glove embedding 
+    returns nn.Embeddings, num_embedding and embedding_dimension 
+    '''
+    
+    # load ingredient to index
+    ing2index = pickle.load(open(config_data['dataset']['ingredient_to_index'], 'rb'))
+                            
+    
+    # 0 is for unknown
+    weights_matrix = np.zeros(len(ing2index)+1, 50)
+    
+    # fill in each row
+    for ingd in ing2index:
+        index = ing2index[ing]
+        weights_matrix[index]=ingredient2embedding(ing)
 
     num_embeddings, embedding_dim = weights_matrix.size()
     emb_layer = nn.Embedding(num_embeddings, embedding_dim)  # vocab (our own) index -> glove vector
