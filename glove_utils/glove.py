@@ -2,16 +2,18 @@
 # create embedding layer from pretrained GloVE 50
 
 import pickle
+import torch
 
 # load preprocessed glove dataset
 import numpy as np
 import torch.nn as nn
-
-from file_utils import GLOVE_PATH
+import sys
+sys.path.append('..')
+from file_utils import GLOVE_PATH, DATA_PATH
 
 npzfile = np.load(f'{GLOVE_PATH}/6B.50_words.npz')
 vectors = npzfile['arr_0']
-# vectors.flush()
+
 words = pickle.load(open(f'{GLOVE_PATH}/6B.50_words.pkl', 'rb'))
 word2idx = pickle.load(open(f'{GLOVE_PATH}/6B.50_idx.pkl', 'rb'))
 glove = {w: vectors[word2idx[w]] for w in words}
@@ -55,7 +57,7 @@ def vocab2matrix(vocab, emd_dim=50):
 def create_emb_layer(vocab, trainable=True):
     weights_matrix = vocab2matrix(vocab)
 
-    num_embeddings, embedding_dim = weights_matrix.size()
+    num_embeddings, embedding_dim = weights_matrix.shape
     emb_layer = nn.Embedding(num_embeddings, embedding_dim)  # vocab (our own) index -> glove vector
     emb_layer.load_state_dict({'weight': weights_matrix})
     if True:
@@ -63,23 +65,25 @@ def create_emb_layer(vocab, trainable=True):
 
     return emb_layer, num_embeddings, embedding_dim
 
-def create_ing_emb_layer(config_data, trainable=True):
+def create_ing_emb_layer(trainable=True):
     ''' create ingredient embedding, ingredient index from ing2index -> glove embedding 
     returns nn.Embeddings, num_embedding and embedding_dimension 
     '''
     
     # load ingredient to index
-    ing2index = pickle.load(open(config_data['dataset']['ingredient_to_index'], 'rb'))
+    ing2index = pickle.load(open(f'{DATA_PATH}/ing2idx.pickle', 'rb'))
                             
     
     # 0 is for unknown
-    weights_matrix = np.zeros(len(ing2index)+1, 50)
+    weights_matrix = np.zeros((len(ing2index)+1, 50))
     
     # fill in each row
     for ingd in ing2index:
-        index = ing2index[ing]
-        weights_matrix[index]=ingredient2embedding(ing)
-
+        index = ing2index[ingd]
+        weights_matrix[index]=ingredient2embedding(ingd)
+    
+    
+    weights_matrix = torch.tensor(weights_matrix).float()
     num_embeddings, embedding_dim = weights_matrix.size()
     emb_layer = nn.Embedding(num_embeddings, embedding_dim)  # vocab (our own) index -> glove vector
     emb_layer.load_state_dict({'weight': weights_matrix})
