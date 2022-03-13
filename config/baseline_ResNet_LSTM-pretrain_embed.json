@@ -1,5 +1,5 @@
 {
-  "experiment_name": "ResNet-tagger",
+  "experiment_name": "ResNet-LSTM-pretrain_embed",
   "mode": "baseline-ResNet-LSTM",
   "X": "image", 
   "y": "ingt", 
@@ -24,7 +24,7 @@
     "embedding_size": 300,
     "model_type": "LSTM",
     "num_layers":1,
-      "pretrained_embed": true
+     "pretrained_embed": true
   },
   "generation": {
     "max_length": 20,

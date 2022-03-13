@@ -15,6 +15,10 @@ def get_model(config_data, vocab, ing_vocab):
         n_layers = 2 if "fc2" in config_data["experiment_name"] else 1
         model = Baseline(outdim=len(ing_vocab), n_lyr=n_layers)
     elif config_data["mode"] == "baseline-ResNet-LSTM":
-        model = Baseline_ResNet_LSTM(ing_vocab_size=len(ing_vocab), n_lyr=nlayer)
+        if config_data["model"]["pretrained_embed"]:
+            model = Baseline_ResNet_LSTM(ing_vocab_size=len(ing_vocab), n_lyr=nlayer, 
+                                         use_pretrain_embed = True, indg_vocab = ing_vocab)
+        else:
+            model = Baseline_ResNet_LSTM(ing_vocab_size=len(ing_vocab), n_lyr=nlayer)
 
     return model
