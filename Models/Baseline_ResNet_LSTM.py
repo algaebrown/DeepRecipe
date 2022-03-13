@@ -65,12 +65,15 @@ class Baseline_ResNet_LSTM(nn.Module):
         self.num_layer = num_layer
         self.hidden_dim = hidden_size
 
-        self.graph_to_embedding = nn.Linear(old_output_size, embedding_size)
+        
         if not use_pretrain_embed:
             self.word_embeddings = nn.Embedding(ing_vocab_size, embedding_size)
         else:
             print('initialize embed using GloVe pretrained vectors')
             self.word_embeddings, num_embeddings, embedding_dim = create_ing_emb_layer(indg_vocab, trainable=True)
+            embedding_size = embedding_dim # override embed size
+        
+        self.graph_to_embedding = nn.Linear(old_output_size, embedding_size)
 
         # self.ingredient_decoder = nn.LSTM(embedding_size, hidden_size, batch_first=True, num_layers=num_layer)
         self.pos_encoder = PositionalEncoding(embedding_size, dropout)

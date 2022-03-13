@@ -19,7 +19,7 @@ word2idx = pickle.load(open(f'{GLOVE_PATH}/6B.50_idx.pkl', 'rb'))
 glove = {w: vectors[word2idx[w]] for w in words}
 
 
-def ingredient2embedding(ingd, emb_dim=50):
+def ingredient2embedding(ingd, emb_dim=200):
     ''' convert words of ingredient to embedding 
     wheat flour -> [1,0,0.5,1,2,0]
     '''
@@ -34,7 +34,7 @@ def ingredient2embedding(ingd, emb_dim=50):
     return sum_embedding
 
 
-def vocab2matrix(vocab, emd_dim=50):
+def vocab2matrix(vocab, emd_dim=200):
     ''' fetch each vocabulary's embedding to matrix 
     vocab: vocab.Vocabulary object
     '''
@@ -53,7 +53,7 @@ def vocab2matrix(vocab, emd_dim=50):
     print(f'found {words_found} words')
     return weights_matrix
 
-def ingdvocab2matrix(vocab, emb_dim=50):
+def ingdvocab2matrix(vocab, emb_dim=200):
     ''' fetch each vocabulary's embedding to matrix 
     vocab: vocab.Vocabulary object
     '''
