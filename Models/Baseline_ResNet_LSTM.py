@@ -7,7 +7,7 @@ import torch.nn as nn
 from torchvision import models
 from model_utils import LossFeature
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
-import glove
+from glove_utils.glove import *
 
 
 class PositionalEncoding(nn.Module):
@@ -70,7 +70,7 @@ class Baseline_ResNet_LSTM(nn.Module):
             self.word_embeddings = nn.Embedding(ing_vocab_size, embedding_size)
         else:
             print('initialize embed using GloVe pretrained vectors')
-            self.word_embeddings, num_embeddings, embedding_dim = glove.create_ing_emb_layer(indg_vocab, trainable=True)
+            self.word_embeddings, num_embeddings, embedding_dim = create_ing_emb_layer(indg_vocab, trainable=True)
 
         # self.ingredient_decoder = nn.LSTM(embedding_size, hidden_size, batch_first=True, num_layers=num_layer)
         self.pos_encoder = PositionalEncoding(embedding_size, dropout)
