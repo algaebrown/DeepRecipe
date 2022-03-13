@@ -47,7 +47,7 @@ class ModelHandler(object):
         self.__best_model = None
 
         # Init Model
-        self.__model = get_model(self.config_data, self.__vocab)
+        self.__model = get_model(self.config_data, self.__vocab, self.indg_vocab)
 
         # TODO: Set these Criterion and Optimizers Correctly
         self.__criterion = self.__model.get_loss_criteria()
@@ -148,7 +148,7 @@ class ModelHandler(object):
             for i, (images, title, ing_binary, ing, ins, img_id) in enumerate(self.__val_loader):
                 input_dict, output_dict = self.get_input_and_target(images, title, ing_binary, ing, ins)
                 target = output_dict[self.__model.input_outputs['output'][0]] # only 1 output            
-                pred = self.__model(input_dict, fine_tune=fine_tune)
+                pred = self.__model(input_dict)
 
 
                 val_loss = self.__criterion(pred, target)
@@ -206,7 +206,7 @@ class ModelHandler(object):
                 
                 input_dict, output_dict = self.get_input_and_target(images, title, ing_binary, ing, ins)
                 target = output_dict[self.__model.input_outputs['output'][0]] # only 1 output            
-                pred = self.__model(input_dict, fine_tune=fine_tune)
+                pred = self.__model(input_dict)
                 
                 test_loss = self.__criterion(pred, target)
                 test_loss_epoch.append(test_loss.item())
@@ -337,7 +337,7 @@ class ModelHandler(object):
         
         if 'masked_ingredient' in input_target_dictionary['output']:
             
-            masked_ingredient, unmasked = random_mask_ingredient(ing) # 2 things
+            masked_ingredient, unmasked = self.random_mask_ingredient(ing) # 2 things
             to_return['input']['unmask_ingredient']=unmasked.to(self.device)
             to_return['output']['masked_ingredient']=masked_ingredient.to(self.device)
         for s in ['input', 'output']:

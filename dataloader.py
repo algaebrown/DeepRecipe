@@ -27,11 +27,15 @@ def find_img_path(imgid, root=IMAGES_PATH):
 def make_same_length(captions):
     # Merge captions (from tuple of 1D tensor to 2D tensor).
     lengths = [len(cap) for cap in captions]
-    targets = torch.zeros(len(captions), max(lengths)).long()
+    targets = torch.zeros(len(captions), max(lengths)+2).long()
 
+    #Tokenize
     for i, cap in enumerate(captions):
-        end = lengths[i]
-        targets[i, :end] = cap[:end]
+        targets[i, 0] = 1
+        end = lengths[i]+1
+        targets[i, 1:end] = cap[:end]
+        targets[i,end] = 2
+
     return targets
 
 def collate_fn(input_data):
@@ -61,8 +65,7 @@ def collate_fn(input_data):
     title = make_same_length(title)
     ing= make_same_length(ing)
     ins = make_same_length(ins)
-    if ing_binary is not None:
-        ing_binary = torch.stack(ing_binary, 0)
+    ing_binary = torch.stack(ing_binary, 0)
     
     return images, title, ing_binary, ing, ins, ann_id
 
