@@ -30,8 +30,11 @@ class Baseline(nn.Module):
             
         self.sigmoid = nn.Sigmoid()
 
-    def forward(self, x,  title=None, ingredients=None, instructions=None, fine_tune=True):
+    def forward(self, input_dict,  title=None, ingredients=None, instructions=None, fine_tune=True):
         # https://learnopencv.com/multi-label-image-classification-with-pytorch-image-tagging/
+        
+        x = input_dict['image']
+        
         if fine_tune:
             with torch.no_grad():
                 features = self.resnet(x)  # batchsize, 2048
@@ -43,5 +46,16 @@ class Baseline(nn.Module):
 
         return self.sigmoid(self.new_fc(features))
 
-    def get_target_feature(self):
-        return LossFeature.INGREDIENT_EMBEDDING
+    def get_input_and_target_feature(self):
+        ''' return a dictionary about what should be the input and what should be the output '''
+        
+        self.input_outputs = {'input': ['image'],
+             'output': ['ingredient_binary']
+            }
+        
+        
+        return self.input_outputs
+    
+    def get_loss_criteria(self):
+        ''' return the loss class, and what should be the "label" '''
+        return torch.nn.BCELoss()
