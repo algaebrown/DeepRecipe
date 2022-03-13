@@ -7,15 +7,10 @@ from sklearn.metrics import *
 
 from file_utils import DATA_PATH
 
-ing2index = pickle.load(open(os.path.join(DATA_PATH, 'ing2idx.pickle'), 'rb'))
-ing2index['Unknown'] = 0
-index2ing = {}
-for ing in ing2index:
-    idx = ing2index[ing]
-    index2ing[idx] = ing
 
 
-def calculate_metrics(pred, target, threshold=0.5):
+
+def calculate_metrics(pred, target, ingd_vocab, threshold=0.5):
     """ derived from this tutorial https://learnopencv.com/multi-label-image-classification-with-pytorch-image-tagging/
     pred = batch_size * class (scores)
     target = batchsize * class (binary)
@@ -27,5 +22,5 @@ def calculate_metrics(pred, target, threshold=0.5):
     f1 = f1_score(y_true=target, y_pred=y_pred, average=None, zero_division=0)
 
     df = pd.DataFrame([prec, recall, f1], index=['prec', 'recall', 'f1'])
-    df.columns = [index2ing[c] for c in df.columns]
+    df.columns = [ingd_vocab.idx2word[c] for c in df.columns]
     return df.T

@@ -75,22 +75,18 @@ def get_datasets(config_data, binary_ing=True):
     test_file_path = os.path.join(images_root_dir, config_data['dataset']['test_pickle'])
 
     vocab_threshold = config_data['dataset']['vocabulary_threshold']  # TODO
-    vocab = load_vocab(train_file_path, vocab_threshold)
-
-    ing2index = defaultdict(lambda: 0,
-                            pickle.load(open(config_data['dataset']['ingredient_to_index'], 'rb'))
-                            )  # category 0 is unknown
+    vocab, ingd_vocab = load_vocab(train_file_path, vocab_threshold)
     
-    train_data_loader = get_recipe_dataloader(RecipeDataset(images_root_dir, train_file_path, vocab, img_size, ing2index, binary_indexing = binary_ing), config_data, in_collate_fn=collate_fn)
-    test_data_loader = get_recipe_dataloader(RecipeDataset(images_root_dir, test_file_path, vocab, img_size, ing2index, binary_indexing = binary_ing), config_data, in_collate_fn=collate_fn)
-    val_data_loader = get_recipe_dataloader(RecipeDataset(images_root_dir, val_file_path, vocab, img_size, ing2index, binary_indexing = binary_ing), config_data, in_collate_fn=collate_fn)
+    train_data_loader = get_recipe_dataloader(RecipeDataset(images_root_dir, train_file_path, vocab, ingd_vocab, img_size, binary_indexing = binary_ing), config_data, in_collate_fn=collate_fn)
+    test_data_loader = get_recipe_dataloader(RecipeDataset(images_root_dir, test_file_path, vocab, ingd_vocab, img_size, binary_indexing = binary_ing), config_data, in_collate_fn=collate_fn)
+    val_data_loader = get_recipe_dataloader(RecipeDataset(images_root_dir, val_file_path, vocab, ingd_vocab, img_size, binary_indexing = binary_ing), config_data, in_collate_fn=collate_fn)
 
-    return vocab, train_data_loader, val_data_loader, test_data_loader
+    return vocab,ingd_vocab, train_data_loader, val_data_loader, test_data_loader
 
 class RecipeDataset(data.Dataset):
     """for torch.utils.data.DataLoader"""
 
-    def __init__(self, root, pickle_path, vocab, img_size, ing2index, transform=None, binary_indexing = False):
+    def __init__(self, root, pickle_path, vocab, ingd_vocab, img_size, transform=None, binary_indexing = False):
         """Set the path for images, captions and vocabulary wrapper.
         Args:
             root: image directory.
@@ -102,14 +98,16 @@ class RecipeDataset(data.Dataset):
 
         with open(pickle_path, 'rb') as f:
             dictionary = pickle.load(f)
-        self.ing2index = ing2index
         
-        self.n_category = max(list(self.ing2index.values())) + 1  # 0 to 3143 total of 3144 numbers
         self.root = root
         self.dict = dictionary
         self.ids = list(dictionary.keys())
         self.max_ingd = 16
+        
         self.vocab = vocab
+        self.ingd_vocab = ingd_vocab
+        self.n_category = len(self.ingd_vocab) # total number of ingredients, plus unk, pad and...
+        
         self.normalize = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.3774, 0.1051, -0.1764], std=[1.1593, 1.1756, 1.1958])  # TODO, might need to change
@@ -135,7 +133,7 @@ class RecipeDataset(data.Dataset):
 
         ann_id = self.ids[index]        
         title = self.dict[ann_id]['title'].lower()
-        ingridients = [self.ing2index[i] for i in self.dict[ann_id]['ingredient_list']]
+        ingridients = [self.ingd_vocab(i) for i in self.dict[ann_id]['ingredient_list']]
         instructions = ' '.join([i['text'] for i in self.dict[ann_id]['instructions']]).lower()
         img_id = random.choice(self.dict[ann_id]['images'])['id']  # can have multiple images, choose 1
 
