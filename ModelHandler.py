@@ -33,8 +33,7 @@ class ModelHandler(object):
         self.verbose_freq = verbose_freq
 
         # Load Datasets
-        self.__vocab, self.indg_vocab, self.__train_loader, self.__val_loader, self.__test_loader = get_datasets(
-            self.config_data)
+        self.__vocab, self.indg_vocab, self.__train_loader, self.__val_loader, self.__test_loader, self.train_dataset, self.test_dataset, self.val_dataset = get_datasets(self.config_data)
 
         # Setup Experiment
         self.__generation_config = self.config_data['generation']
@@ -154,9 +153,7 @@ class ModelHandler(object):
 
         return np.mean(val_loss_epoch)
 
-    # TODO: Implement your test function here. Generate sample captions and evaluate loss and
-    #  bleu scores using the best model. Use utility functions provided to you in caption_utils.
-    #  Note than you'll need image_ids and COCO object in this case to fetch all captions to generate bleu scores.
+    
     def return_example(self, use_best_model=True, mode='stochastic', gamma=0.1):
         ''' you can specify mode and visualize  '''
         self.__model.eval()
@@ -166,21 +163,42 @@ class ModelHandler(object):
             best_model_path = os.path.join(
                 self.__experiment_dir, 'best_model.pt')
             self.__model.load_state_dict(torch.load(best_model_path))
-        # get some data from test set
+            
+        
         with torch.no_grad():
-            b1s = []
-            b4s = []
-            for iter_, (images, captions, img_ids) in enumerate(self.__test_loader):
-                images = images.to(self.device)
-                captions = captions.to(self.device)
-                pred = self.__model(images, captions)
-
-                generated_words = self.__model.generate_caption(images, size=self.__generation_config["max_length"],
-                                                                mode=mode, gamma=gamma)
-                b1, b4, data = compute_blue_score(
-                    img_ids, generated_words, self.__vocab, self.__coco_test, verbose=(iter_ % self.verbose_freq == 0))
-
-                break
+            
+            for iter_, (images, title, ing_binary, ing, ins, ann_ids) in enumerate(self.__test_loader):
+                
+                input_dict, output_dict = self.get_input_and_target(images, title, ing_binary, ing, ins)
+                target = output_dict[self.__model.input_outputs['output'][0]] # only 1 output            
+                predictions = self.__model(input_dict) # TODO, might need to modify here to return index
+            data = []
+                
+            # get raw data
+            for i, ann_id in enumerate(ann_ids):
+                title, instructions, ingridients, img_paths = self.test_dataset.get_raw_data(ann_id)
+                pred = predictions[i]
+                
+                # find <start> and <end> token and extract in between
+                try:
+                    end = pred.index(self.indg_vocab('<end>'))
+                                  
+                except:
+                    end = len(pred)
+                try:
+                    start = pred.index(self.indg_vocab('<start>'))
+                except:
+                    start = 0
+                
+                pred = pred[start:end]
+                
+                pred_ingd = [self.indg_vocab.idx2word(i) for i in pred]
+                
+                data.append([title, instructions, ingridients, img_paths, pred_ingd])
+            # make prediction into words
+            
+            data = pd.DataFrame(data, columns = ['title', 'instructions', 'ingredients', 'img_paths', 'predicted_ingredients'])
+            # use ann_id to extract images
         return data
 
     # TODO: Not yet implemented properly

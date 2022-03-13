@@ -80,11 +80,15 @@ def get_datasets(config_data, binary_ing=True):
     vocab_threshold = config_data['dataset']['vocabulary_threshold']  # TODO
     vocab, ingd_vocab = load_vocab(train_file_path, vocab_threshold)
     
-    train_data_loader = get_recipe_dataloader(RecipeDataset(images_root_dir, train_file_path, vocab, ingd_vocab, img_size, binary_indexing = binary_ing), config_data, in_collate_fn=collate_fn)
-    test_data_loader = get_recipe_dataloader(RecipeDataset(images_root_dir, test_file_path, vocab, ingd_vocab, img_size, binary_indexing = binary_ing), config_data, in_collate_fn=collate_fn)
-    val_data_loader = get_recipe_dataloader(RecipeDataset(images_root_dir, val_file_path, vocab, ingd_vocab, img_size, binary_indexing = binary_ing), config_data, in_collate_fn=collate_fn)
+    train_dataset = RecipeDataset(images_root_dir, train_file_path, vocab, ingd_vocab, img_size, binary_indexing = binary_ing)
+    test_dataset = RecipeDataset(images_root_dir, test_file_path, vocab, ingd_vocab, img_size, binary_indexing = binary_ing)
+    val_dataset = RecipeDataset(images_root_dir, val_file_path, vocab, ingd_vocab, img_size, binary_indexing = binary_ing)
+    
+    train_data_loader = get_recipe_dataloader(train_dataset, config_data, in_collate_fn=collate_fn)
+    test_data_loader = get_recipe_dataloader(test_dataset, config_data, in_collate_fn=collate_fn)
+    val_data_loader = get_recipe_dataloader(val_dataset, config_data, in_collate_fn=collate_fn)
 
-    return vocab,ingd_vocab, train_data_loader, val_data_loader, test_data_loader
+    return vocab,ingd_vocab, train_data_loader, val_data_loader, test_data_loader, train_dataset, test_dataset, val_dataset
 
 class RecipeDataset(data.Dataset):
     """for torch.utils.data.DataLoader"""
@@ -130,6 +134,17 @@ class RecipeDataset(data.Dataset):
 
         return target
 
+    def get_raw_data(self, ann_id):
+        ''' return raw data (text) and path to img '''
+        title = self.dict[ann_id]['title'].lower()
+        ingridients = self.dict[ann_id]['ingredient_list']
+        instructions = ' '.join([i['text'] for i in self.dict[ann_id]['instructions']]).lower()
+        img_ids = [i['id'] for i in self.dict[ann_id]['images']]  # can have multiple images, choose 1
+        img_paths = [find_img_path(img_id) for img_id in img_ids]
+        
+        return title, ingridients, instructions, img_paths
+        
+        
     def __getitem__(self, index):
         """Returns one data pair (image and caption)."""
         ing_index_tensor = None
