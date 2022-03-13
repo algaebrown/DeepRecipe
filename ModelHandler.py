@@ -33,7 +33,7 @@ class ModelHandler(object):
         self.verbose_freq = verbose_freq
 
         # Load Datasets
-        self.__vocab, self.__train_loader, self.__val_loader, self.__test_loader = get_datasets(
+        self.__vocab, self.indg_vocab, self.__train_loader, self.__val_loader, self.__test_loader = get_datasets(
             self.config_data)
 
         # Setup Experiment
@@ -50,7 +50,7 @@ class ModelHandler(object):
         self.__model = get_model(self.config_data, self.__vocab)
 
         # TODO: Set these Criterion and Optimizers Correctly
-        self.__criterion = torch.nn.BCELoss()
+        self.__criterion = self.__model.get_loss_criteria()
         self.__optimizer = torch.optim.Adam(
             self.__model.parameters(), lr=self.config_data['experiment']['learning_rate'])
 
@@ -122,12 +122,10 @@ class ModelHandler(object):
         train_loss_epoch = []
         for i, (images, title, ing_binary, ing, ins, ann_id) in enumerate(self.__train_loader):
             self.__optimizer.zero_grad()
-            target = self.get_target(title, ing_binary, ing, ins)
-
-            images = images.to(self.device)
-            target = target.to(self.device)
-
-            pred = self.__model(images, fine_tune=fine_tune)
+            
+            input_dict, output_dict = self.get_input_and_target(images, title, ing_binary, ing, ins)
+            target = output_dict[self.__model.input_outputs['output'][0]] # only 1 output            
+            pred = self.__model(input_dict, fine_tune=fine_tune)
 
 
             training_loss = self.__criterion(pred, target)
@@ -148,12 +146,9 @@ class ModelHandler(object):
 
         with torch.no_grad():
             for i, (images, title, ing_binary, ing, ins, img_id) in enumerate(self.__val_loader):
-                target = self.get_target(title, ing_binary, ing, ins)
-
-                images = images.to(self.device)
-                target = target.to(self.device)
-
-                pred = self.__model(images)
+                input_dict, output_dict = self.get_input_and_target(images, title, ing_binary, ing, ins)
+                target = output_dict[self.__model.input_outputs['output'][0]] # only 1 output            
+                pred = self.__model(input_dict, fine_tune=fine_tune)
 
 
                 val_loss = self.__criterion(pred, target)
@@ -208,12 +203,10 @@ class ModelHandler(object):
             b1s = []
             b4s = []
             for iter_, (images, title, ing_binary, ing, ins, img_id) in enumerate(self.__test_loader):
-                target = self.get_target(title, ing_binary, ing, ins)
-
-                images = images.to(self.device)
-                target = target.to(self.device)
-            
-                pred = self.__model(images)
+                
+                input_dict, output_dict = self.get_input_and_target(images, title, ing_binary, ing, ins)
+                target = output_dict[self.__model.input_outputs['output'][0]] # only 1 output            
+                pred = self.__model(input_dict, fine_tune=fine_tune)
                 
                 test_loss = self.__criterion(pred, target)
                 test_loss_epoch.append(test_loss.item())
@@ -223,7 +216,7 @@ class ModelHandler(object):
                 if iter_ % self.verbose_freq == 0:
                     print(f'batch{iter_}, {test_loss}')
                 
-                evl=calculate_metrics(pred.cpu().detach().numpy(), ingt.cpu().detach().numpy())
+                evl=calculate_metrics(pred.cpu().detach().numpy(), ingt.cpu().detach().numpy(), self.indg_vocab)
                 evl = evl.replace(0, np.nan) # when no class is there
                 scores.append(evl.values)
 
@@ -301,18 +294,58 @@ class ModelHandler(object):
         plt.savefig(os.path.join(self.__experiment_dir, "stat_plot.png"))
         plt.show()
 
-    def get_target(self, title, ing_binary, ing, ins,):
-        target_feature= self.__model.get_target_feature()
-        if target_feature == LossFeature.TITLE:
-            target = title
-        elif target_feature == LossFeature.INGREDIENT_EMBEDDING:
-            target = ing_binary
-        elif target_feature == LossFeature.INGREDIENT:
-            target = ing
-        elif target_feature == LossFeature.INSTRUCTIONS:
-            target = ins
-        elif target_feature == LossFeature.MASK:
-            # TODO: we will have to implement the mask thing here
-            target = None
+    def random_mask_ingredient(ing):
+        # find all non-zero entries
+        # ing: batch_size, arbitrary length
+        
+        # find positions with ingredients, collate_fn pad 0s
+        non_zeros = ing.reshape(-1)[ing.reshape(-1)!=0]
+        frequency = Counter(non_zeros.numpy())
 
-        return target
+        # sampling weights is reciporcal to log frequency in this batch
+        index = list(frequency.keys())
+        p = 1/np.log((np.array(list(frequency.values()))+1).astype(float))
+
+        sampling_frequency = defaultdict(lambda: 0, 
+                                        {index[i]: p[i] for i in range(len(p))})
+
+        # for every example
+        to_mask_idx = []
+        for row_index in range(ing.shape[0]):
+
+            ingd_one_ex = ing[row_index]
+            pos_prob = np.array([sampling_frequency[i] for i in ingd_one_ex.cpu().numpy()])
+            # normalize
+            pos_prob = pos_prob/pos_prob.sum()
+
+            # sample 1 position based on probability
+            to_mask = np.random.choice(np.arange(ing.shape[1]), p = pos_prob)
+
+            to_mask_idx.append(to_mask)
+
+        masked = torch.clone(ing[np.arange(ing.shape[0]), to_mask_idx])
+        ing[np.arange(ing.shape[0]), to_mask_idx] = 0 # should we set another token?
+        
+        
+        return masked, ing
+    
+    
+    def get_input_and_target(self, img, title, ing_binary, ing, ins,):
+        to_return = {'input':{}, 'output':{}}
+        input_target_dictionary= self.__model.get_input_and_target_feature()
+        
+        
+        if 'masked_ingredient' in input_target_dictionary['output']:
+            
+            masked_ingredient, unmasked = random_mask_ingredient(ing) # 2 things
+            to_return['input']['unmask_ingredient']=unmasked.to(self.device)
+            to_return['output']['masked_ingredient']=masked_ingredient.to(self.device)
+        for s in ['input', 'output']:
+            
+            for item, name in zip([img, title, ing_binary, ing, ins],
+                           ['image', 'title', 'ingredient_binary', 'ingredient', 'instruction']):
+                if name in input_target_dictionary[s]:
+                    
+                    to_return[s][name]=item.to(self.device)
+
+        return to_return['input'], to_return['output']
