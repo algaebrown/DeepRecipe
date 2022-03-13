@@ -104,9 +104,7 @@ class ModelHandler(object):
 
             if val_loss < min_val_loss:
                 # save best model
-                best_model_path = os.path.join(
-                    self.__experiment_dir, 'best_model.pt')
-                torch.save(self.__model.state_dict(), best_model_path)
+                self.__save_best_model()
                 min_val_loss = val_loss
 
             print(f'epoch {epoch}, train:{train_loss}, val:{val_loss}')
@@ -244,6 +242,14 @@ class ModelHandler(object):
         state_dict = {'model': model_dict,
                       'optimizer': self.__optimizer.state_dict()}
         torch.save(state_dict, root_model_path)
+
+    def __save_best_model(self): 
+        if not os.path.exists(self.__experiment_dir):
+            os.makedirs(self.__experiment_dir)
+
+        best_model_path = os.path.join(self.__experiment_dir, 'best_model.pt')
+        torch.save(self.__model.state_dict(), best_model_path)
+
 
     def __record_stats(self, train_loss, val_loss):
         if not os.path.exists(self.__experiment_dir):
