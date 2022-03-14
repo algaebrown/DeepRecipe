@@ -171,30 +171,33 @@ class ModelHandler(object):
                 
                 input_dict, output_dict = self.get_input_and_target(images, title, ing_binary, ing, ins)
                 target = output_dict[self.__model.input_outputs['output'][0]] # only 1 output            
-                predictions = self.__model(input_dict) # TODO, might need to modify here to return index
+                _, pred = self.__model.predict(input_dict, mode = mode, r = gamma) 
+                pred = pred.detach().cpu().numpy()
+                pred_word = np.vectorize(lambda i: self.indg_vocab.idx2word[i])(pred)
+                
+                break
+            
             data = []
                 
             # get raw data
             for i, ann_id in enumerate(ann_ids):
-                title, instructions, ingridients, img_paths = self.test_dataset.get_raw_data(ann_id)
-                pred = predictions[i]
+                title,  ingridients, instructions,img_paths = self.test_dataset.get_raw_data(ann_id)
+                p = pred_word[i]
                 
                 # find <start> and <end> token and extract in between
                 try:
-                    end = pred.index(self.indg_vocab('<end>'))
+                    end = p.index('<end>')
                                   
                 except:
-                    end = len(pred)
+                    end = len(p)
                 try:
-                    start = pred.index(self.indg_vocab('<start>'))
+                    start = p.index('<start>')
                 except:
                     start = 0
                 
-                pred = pred[start:end]
                 
-                pred_ingd = [self.indg_vocab.idx2word(i) for i in pred]
                 
-                data.append([title, instructions, ingridients, img_paths, pred_ingd])
+                data.append([title, instructions, ingridients, img_paths, p])
             # make prediction into words
             
             data = pd.DataFrame(data, columns = ['title', 'instructions', 'ingredients', 'img_paths', 'predicted_ingredients'])

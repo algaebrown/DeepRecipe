@@ -1,5 +1,5 @@
 from Models.Baseline import *
-from Models.Baseline_ResNet_LSTM import *
+from Models.Baseline_ResNet_LSTM_orient import *
 
 
 def get_model(config_data, vocab, ing_vocab):
