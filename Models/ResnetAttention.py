@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 
 from torchvision import models
-from model_utils import LossFeature
 
 class ResNetAttention(nn.Module):
     """ ResNet encoder"""
@@ -70,5 +69,4 @@ class ResNetAttention(nn.Module):
 
         return output_ingd_embed
 
-    def get_target_feature(self):   
-        return LossFeature.MASK
+

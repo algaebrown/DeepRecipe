@@ -5,7 +5,6 @@ import math
 import torch.nn as nn
 
 from torchvision import models
-from model_utils import LossFeature
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from glove_utils.glove import *
 

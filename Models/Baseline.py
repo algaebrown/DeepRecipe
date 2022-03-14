@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 
 from torchvision import models
-from model_utils import LossFeature
 
 
 def set_parameter_requires_grad(model, feature_extracting):

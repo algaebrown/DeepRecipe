@@ -8,7 +8,6 @@ from caption_utils import *
 from dataloader import get_datasets
 from file_utils import *
 from model_factory import get_model
-from model_utils import LossFeature
 from classification_metrics import *
 
 ROOT_STATS_DIR = './experiment_data'
