@@ -9,6 +9,9 @@ from model_utils import LossFeature
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from glove_utils.glove import *
 
+def generate_square_subsequent_mask(sz: int):
+    """Generates an upper-triangular matrix of -inf, with zeros on diag."""
+    return torch.triu(torch.ones(sz, sz) * float('-inf'), diagonal=1)
 
 class PositionalEncoding(nn.Module):
 
@@ -84,7 +87,7 @@ class Baseline_ResNet_LSTM(nn.Module):
 
         self.sigmoid = nn.Sigmoid()
 
-    def forward(self, input, fine_tune=False):
+    def forward(self, input, mask = None, fine_tune=False):
         # https://learnopencv.com/multi-label-image-classification-with-pytorch-image-tagging/
         # I dont have to fine tune it
         image = input['image']
@@ -100,13 +103,58 @@ class Baseline_ResNet_LSTM(nn.Module):
         # lstm_out, hidden = self.ingredient_decoder(inputs)
         
         inputs = self.pos_encoder(inputs)
-        output = self.transformer_encoder(inputs)
+        output = self.transformer_encoder(inputs, mask = mask)
 
-        lstm_feats = self.hidden_to_word(output)  # perform learn Wh+b
-        decoder_out = nn.functional.softmax(lstm_feats[:, :-1, :], dim=2)  # the last prediction makes no sense
+        self.lstm_feats = self.hidden_to_word(output)  # perform learn Wh+b
+        
+        decoder_out = nn.functional.softmax(self.lstm_feats[:, :-1, :], dim=2)  # the last prediction makes no sense
         ing_prob = torch.amax(decoder_out, dim=1)
         return ing_prob
+    def sample(self, mode = 'stochastic', r = 0.9):
+        if mode == 'deterministic':
+            softmax_out = nn.functional.softmax(self.lstm_feats[:, :-1, :], dim=2) 
+            words_index = torch.argmax(softmax_out, dim=2)
 
+        else:
+            # make weighted softmax
+            weighted_out = self.lstm_feats / r
+
+            softmax_out = nn.functional.softmax(weighted_out[:, :-1, :], dim=2) # 0: batch_size, 1: sentence len 2
+            predicted_words = []
+            # sample next word randomly
+            for slen in range(softmax_out.shape[1]):
+                slice_ = softmax_out[:, slen, :].squeeze(1)
+                next_word = torch.multinomial(slice_, num_samples=1).squeeze(1)
+
+                predicted_words.append(next_word)
+            words_index = torch.stack(predicted_words, dim = 1)
+        return words_index
+
+    
+    
+    def predict(self, input,  mode = 'stochastic', r = 0.9):
+        ''' generate text '''
+        
+        
+        image = input['image']
+        ingredients = input['ingredient']
+        bptt = ingredients.shape[0]
+        
+        src_mask = generate_square_subsequent_mask(bptt).to('cuda:0')
+        
+        
+        
+            
+        batch_size = ingredients.shape[0]
+        if batch_size != bptt:
+            src_mask = src_mask[:batch_size, :batch_size]
+        ing_prob = self.forward(input, mask = src_mask)
+        
+        sampled_word = self.sample(mode = mode, r = r)
+        
+        
+        return ing_prob, sampled_word
+        
     def get_input_and_target_feature(self):
         ''' return a dictionary about what should be the input and what should be the output '''
         

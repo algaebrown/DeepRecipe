@@ -202,14 +202,20 @@ class ModelHandler(object):
         return data
 
     # TODO: Not yet implemented properly
+    def get_best_model(self):
+        
+        best_model_path = os.path.join(self.__experiment_dir, 'best_model.pt')
+        self.__model.load_state_dict(torch.load(best_model_path))
+        
+        return self.__model
+    
     def test(self, use_best_model=True):
         self.__model.eval()
         
         if use_best_model: # use those from early stop
             print('=== Using best model from early stop ===')
-            best_model_path = os.path.join(self.__experiment_dir, 'best_model.pt')
-            self.__model.load_state_dict(torch.load(best_model_path))
-        
+            
+            self.get_best_model()
         test_loss = 0
         bleu1 = 0
         bleu4 = 0
