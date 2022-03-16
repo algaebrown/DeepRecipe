@@ -10,14 +10,15 @@ from file_utils import *
 from model_factory import get_model
 from classification_metrics import *
 from nlp_metric import *
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 ROOT_STATS_DIR = './experiment_data'
 
-def label2onehot(labels, pad_value):
+def label2onehot(labels, vocab_size):
 
     # input labels to one hot vector
     inp_ = torch.unsqueeze(labels, 2)
-    one_hot = torch.FloatTensor(labels.size(0), labels.size(1), pad_value + 1).zero_().to(device)
+    one_hot = torch.FloatTensor(labels.size(0), labels.size(1), vocab_size+1).zero_().to(device)
     one_hot.scatter_(2, inp_, 1)
     one_hot, _ = one_hot.max(dim=1)
     # remove pad position
@@ -164,12 +165,12 @@ class ModelHandler(object):
             self.__optimizer.zero_grad()
             
             input_dict, output_dict = self.get_input_and_target(images, title, ing_binary, ing, ins)
-            target = output_dict[self.__model.input_outputs['output'][0]] # only 1 output            
+            target_ingrs = output_dict[self.__model.input_outputs['output'][0]] # only 1 output            
             ingr_probs, ing_idx, eos = self.__model(input_dict, fine_tune=fine_tune)
 
 
-            target_ingrs = target['ingredient']
-            target_one_hot_smooth = label2onehot(target_ingrs, 0)
+            # target_ingrs = target['ingredient']
+            target_one_hot_smooth = label2onehot(target_ingrs, len(self.indg_vocab))
             target_one_hot_smooth[target_one_hot_smooth == 1] = (1-self.label_smoothing)
             target_one_hot_smooth[target_one_hot_smooth == 0] = self.label_smoothing / target_one_hot_smooth.size(-1)
 
@@ -189,6 +190,9 @@ class ModelHandler(object):
             eos_loss = mult*(eos_loss * eos_pos.float()).sum(1) / (eos_pos.float().sum(1) + 1e-6) + \
                                  mult*(eos_loss * eos_head.float()).sum(1) / (eos_head.float().sum(1) + 1e-6)
             
+
+            ingr_loss = ingr_loss.mean()
+            eos_loss = eos_loss.mean()
             training_loss = 0.8 * ingr_loss + 0.2*eos_loss
             # training_loss = self.__criterion(ing_prob, target)
             # if self.weighted:
