@@ -8,6 +8,25 @@ from torchvision import models
 
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from glove_utils.glove import *
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+
+def mask_from_eos(ids, eos_value, mult_before=True):
+    mask = torch.ones(ids.size()).to(device).byte()
+    mask_aux = torch.ones(ids.size(0)).to(device).byte()
+
+    # find eos in ingredient prediction
+    for idx in range(ids.size(1)):
+        # force mask to have 1s in the first position to avoid division by 0 when predictions start with eos
+        if idx == 0:
+            continue
+        if mult_before:
+            mask[:, idx] = mask[:, idx] * mask_aux
+            mask_aux = mask_aux * (ids[:, idx] != eos_value)
+        else:
+            mask_aux = mask_aux * (ids[:, idx] != eos_value)
+            mask[:, idx] = mask[:, idx] * mask_aux
+    return mask
 
 def generate_square_subsequent_mask(sz: int):
     """Generates an upper-triangular matrix of -inf, with zeros on diag."""
@@ -53,7 +72,7 @@ class Baseline_ResNet_LSTM(nn.Module):
         assert ing_vocab_size!=0
         
         print('orient no teacher')
-        
+        self.pad_value = 0
         #Encoder
         self.image_encoder = models.resnet50(pretrained=True)
         
@@ -121,8 +140,8 @@ class Baseline_ResNet_LSTM(nn.Module):
 #         ing_prob = torch.amax(decoder_out, dim=1)
 
         # train with sampling
-        ing_prob, word_idx = self.predict(input, mode = 'deterministic', bptt = input['ingredient'].shape[1])
-        return ing_prob
+        ing_prob, word_idx, eos = self.predict(input, mode = 'deterministic', bptt = input['ingredient'].shape[1])
+        return ing_prob, word_idx, eos
     
     
     def predict(self, input,  mode = 'stochastic', r = 0.9, bptt = 20):
@@ -130,6 +149,7 @@ class Baseline_ResNet_LSTM(nn.Module):
         
         
         image = input['image']
+        target_ingrs = input['ingredient']
         
         with torch.no_grad():
             image = self.image_encoder(image)  # batchsize, 2048
@@ -180,16 +200,25 @@ class Baseline_ResNet_LSTM(nn.Module):
         sampled_word = torch.cat(pred_word_idx, dim = 1)
         decoder_out = torch.stack(decoder_out, dim = 1) # stack [batch_size, n_indg] along dim 1 (seq_len)
         #print('decoder out', decoder_out.shape)
-            
-        ing_prob = torch.amax(decoder_out, dim=1)
 
-        return ing_prob, sampled_word
+        eos = decoder_out[:, :, 2]
+        
+        # select transformer steps to pool from
+        mask_perminv = mask_from_eos(target_ingrs, eos_value=2, mult_before=False)
+        ingr_probs = decoder_out * mask_perminv.float().unsqueeze(-1)
+
+        ingr_probs, _ = torch.max(ingr_probs, dim=1)
+        sampled_word[mask_perminv == 0] = self.pad_value
+
+            
+
+        return ingr_probs, sampled_word, eos
         
     def get_input_and_target_feature(self):
         ''' return a dictionary about what should be the input and what should be the output '''
         
         self.input_outputs = {'input': ['image', 'ingredient'],
-             'output': ['ingredient_binary']
+             'output': ['ingredient']
             }
         return self.input_outputs
     

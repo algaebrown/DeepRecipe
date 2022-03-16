@@ -13,6 +13,19 @@ from nlp_metric import *
 
 ROOT_STATS_DIR = './experiment_data'
 
+def label2onehot(labels, pad_value):
+
+    # input labels to one hot vector
+    inp_ = torch.unsqueeze(labels, 2)
+    one_hot = torch.FloatTensor(labels.size(0), labels.size(1), pad_value + 1).zero_().to(device)
+    one_hot.scatter_(2, inp_, 1)
+    one_hot, _ = one_hot.max(dim=1)
+    # remove pad position
+    one_hot = one_hot[:, :-1]
+    # eos position is always 0
+    one_hot[:, 2] = 0
+
+    return one_hot
 
 # Class to encapsulate a neural experiment.
 # The boilerplate code to setup the experiment, log stats, checkpoints and plotting have been provided to you.
@@ -21,6 +34,9 @@ ROOT_STATS_DIR = './experiment_data'
 class ModelHandler(object):
     def __init__(self, config_name, verbose_freq=2000, weighted = False):
         self.config_data = read_file_in_dir('./config/', config_name + '.json')
+        
+        self.label_smoothing = 0.1
+        self.pad_value = 0
 
         if self.config_data is None:
             raise Exception("Configuration file doesn't exist: ", config_name)
@@ -55,6 +71,7 @@ class ModelHandler(object):
             self.__criterion = self.__model.get_loss_criteria(**{'reduction':'none'})
         else:
             self.__criterion = self.__model.get_loss_criteria()
+        self.crit_eos = self.__model.get_loss_criteria()
         self.__optimizer = torch.optim.Adam(
             self.__model.parameters(), lr=self.config_data['experiment']['learning_rate'])
 
@@ -148,14 +165,36 @@ class ModelHandler(object):
             
             input_dict, output_dict = self.get_input_and_target(images, title, ing_binary, ing, ins)
             target = output_dict[self.__model.input_outputs['output'][0]] # only 1 output            
-            pred = self.__model(input_dict, fine_tune=fine_tune)
+            ingr_probs, ing_idx, eos = self.__model(input_dict, fine_tune=fine_tune)
 
+
+            target_ingrs = target['ingredient']
+            target_one_hot_smooth = label2onehot(target_ingrs, 0)
+            target_one_hot_smooth[target_one_hot_smooth == 1] = (1-self.label_smoothing)
+            target_one_hot_smooth[target_one_hot_smooth == 0] = self.label_smoothing / target_one_hot_smooth.size(-1)
+
+            ingr_loss = self.__criterion(ingr_probs, target_one_hot_smooth)
+            ingr_loss = torch.mean(ingr_loss, dim=-1)
+
+            train_loss_epoch.append(ingr_loss.item())
+
+
+            target_eos = ((target_ingrs == 2) ^ (target_ingrs == self.pad_value))
+            eos_pos = (target_ingrs == 0)
+            eos_head = ((target_ingrs != self.pad_value) & (target_ingrs != 0))
+            eos_loss = self.crit_eos(eos, target_eos.float())
+
+            mult = 1/2
+            # eos loss is only computed for timesteps <= t_eos and equally penalizes 0s and 1s
+            eos_loss = mult*(eos_loss * eos_pos.float()).sum(1) / (eos_pos.float().sum(1) + 1e-6) + \
+                                 mult*(eos_loss * eos_head.float()).sum(1) / (eos_head.float().sum(1) + 1e-6)
             
-            training_loss = self.__criterion(pred, target)
-            if self.weighted:
-                training_loss = (training_loss*self.class_weight).mean()
+            training_loss = 0.8 * ingr_loss + 0.2*eos_loss
+            # training_loss = self.__criterion(ing_prob, target)
+            # if self.weighted:
+            #     training_loss = (training_loss*self.class_weight).mean()
                 
-            train_loss_epoch.append(training_loss.item())
+            # train_loss_epoch.append(training_loss.item())
 
             if i % self.verbose_freq == 0:
                 print(f'batch{i}, {training_loss}')
@@ -303,6 +342,7 @@ class ModelHandler(object):
         bleu4 = 0
         test_loss_epoch = []
         scores = []
+        losses = {}
         with torch.no_grad():
             b1s = []
             b4s = []
@@ -311,14 +351,42 @@ class ModelHandler(object):
                 
                 input_dict, output_dict = self.get_input_and_target(images, title, ing_binary, ing, ins)
                 target = output_dict[self.__model.input_outputs['output'][0]] # only 1 output            
-                pred, pred_word_index = self.__model.predict(input_dict)
+                ingr_probs, pred_word_index, eos = self.__model.predict(input_dict)
                 
+
+                
+                losses['ingr_loss'] = ingr_loss
+
+                # cardinality penalty
+                losses['card_penalty'] = torch.abs((ingr_probs*target_one_hot).sum(1) - target_one_hot.sum(1)) + \
+                                        torch.abs((ingr_probs*(1-target_one_hot)).sum(1))
+
+                eos_loss = self.crit_eos(eos, target_eos.float())
+
+                mult = 1/2
+                # eos loss is only computed for timesteps <= t_eos and equally penalizes 0s and 1s
+                losses['eos_loss'] = mult*(eos_loss * eos_pos.float()).sum(1) / (eos_pos.float().sum(1) + 1e-6) + \
+                                    mult*(eos_loss * eos_head.float()).sum(1) / (eos_head.float().sum(1) + 1e-6)
+                # iou
+                pred_one_hot = label2onehot(ingr_ids, self.pad_value)
+                # iou sample during training is computed using the true eos position
+                losses['iou'] = softIoU(pred_one_hot, target_one_hot)
+
+
+
+
+
+
+
+
+
+
                 # Calculate loss
-                test_loss = self.__criterion(pred, target)
-                if self.weighted:
-                    test_loss = (test_loss*self.class_weight).mean()
+                # test_loss = self.__criterion(pred, target)
+                # if self.weighted:
+                #     test_loss = (test_loss*self.class_weight).mean()
                 
-                test_loss_epoch.append(test_loss.item())
+                # test_loss_epoch.append(test_loss.item())
                 
                 
                 # F1 score and such
