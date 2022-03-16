@@ -151,6 +151,7 @@ class RecipeDataset(data.Dataset):
 
         ann_id = self.ids[index]        
         title = self.dict[ann_id]['title'].lower()
+        random.shuffle(self.dict[ann_id]['ingredient_list']) # shuffle them cause they have no positional dep
         ingridients = [self.ingd_vocab(i) for i in self.dict[ann_id]['ingredient_list']]
         instructions = ' '.join([i['text'] for i in self.dict[ann_id]['instructions']]).lower()
         img_id = random.choice(self.dict[ann_id]['images'])['id']  # can have multiple images, choose 1
