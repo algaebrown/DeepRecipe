@@ -1,5 +1,5 @@
 from datetime import datetime
-
+import os
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -9,6 +9,7 @@ from dataloader import get_datasets
 from file_utils import *
 from model_factory import get_model
 from classification_metrics import *
+from nlp_metric import *
 
 ROOT_STATS_DIR = './experiment_data'
 
@@ -18,7 +19,7 @@ ROOT_STATS_DIR = './experiment_data'
 # You only need to implement the main training logic of your experiment and implement train, val and test methods.
 # You are free to modify or restructure the code as per your convenience.
 class ModelHandler(object):
-    def __init__(self, config_name, verbose_freq=2000):
+    def __init__(self, config_name, verbose_freq=2000, weighted = False):
         self.config_data = read_file_in_dir('./config/', config_name + '.json')
 
         if self.config_data is None:
@@ -48,7 +49,12 @@ class ModelHandler(object):
         self.__model = get_model(self.config_data, self.__vocab, self.indg_vocab)
 
         # TODO: Set these Criterion and Optimizers Correctly
-        self.__criterion = self.__model.get_loss_criteria()
+        self.weighted = weighted
+        if weighted:
+            self.calculate_weight()
+            self.__criterion = self.__model.get_loss_criteria(**{'reduction':'none'})
+        else:
+            self.__criterion = self.__model.get_loss_criteria()
         self.__optimizer = torch.optim.Adam(
             self.__model.parameters(), lr=self.config_data['experiment']['learning_rate'])
 
@@ -56,6 +62,8 @@ class ModelHandler(object):
 
         # Load Experiment Data if available
         self.__load_experiment()
+        
+        
 
     # Loads the experiment data if exists to resume training from last saved checkpoint.
 
@@ -111,6 +119,25 @@ class ModelHandler(object):
             self.__save_model()
 
     # TODO: Perform one training iteration on the whole dataset and return loss value
+    def calculate_weight(self, pseudocount = 1.1):
+        if not os.path.isfile('weights.pt'):
+            for i, (images, title, ing_binary, ing, ins, ann_id) in enumerate(self.__train_loader):
+                if i == 0:
+                    count = ing_binary.sum(axis = 0)
+                else:
+                    count += ing_binary.sum(axis = 0)
+
+                weight = 1/np.log(count+pseudocount)
+                weight = weight/weight.sum()
+
+                self.class_weight = weight
+            torch.save(weight, 'weights.pt')
+        else:
+            self.class_weight = torch.load('weights.pt')
+            print('load precalc category weights')
+        self.class_weight = self.class_weight.to(self.device)
+            
+        
     def __train(self, fine_tune=False):
         print(f'training on {self.device}')
         self.__model.train()
@@ -123,8 +150,11 @@ class ModelHandler(object):
             target = output_dict[self.__model.input_outputs['output'][0]] # only 1 output            
             pred = self.__model(input_dict, fine_tune=fine_tune)
 
-
+            
             training_loss = self.__criterion(pred, target)
+            if self.weighted:
+                training_loss = (training_loss*self.class_weight).mean()
+                
             train_loss_epoch.append(training_loss.item())
 
             if i % self.verbose_freq == 0:
@@ -148,11 +178,67 @@ class ModelHandler(object):
 
 
                 val_loss = self.__criterion(pred, target)
+                if self.weighted:
+                    val_loss = (val_loss*self.class_weight).mean()
                 val_loss_epoch.append(val_loss.item())
 
         return np.mean(val_loss_epoch)
 
     
+    def get_raw_data(self, ann_ids, pred):
+        ''' given a list of ann_ids, pred_word_index, return the raw data and do basic NLP preprocessing like lower()
+        ann_ids: a tuple containing data ID
+        pred: [batch_size * max_len] containing ingredient idx
+        ''' 
+        
+        data = []
+        # make to words
+        pred_word = np.vectorize(lambda i: self.indg_vocab.idx2word[i])(pred)
+        
+        # get raw data
+        for i, ann_id in enumerate(ann_ids):
+            title,  ingridients, instructions,img_paths = self.test_dataset.get_raw_data(ann_id)
+            p = pred_word[i]
+
+            # find <start> and <end> token and extract in between
+            try:
+                end = p.index('<end>')
+
+            except:
+                end = len(p)
+            try:
+                start = p.index('<start>')
+            except:
+                start = 0
+                
+            # sort the ingredients to achieve highest possible BLEU score
+            
+            
+            ingridients.sort()
+
+
+            data.append([title, instructions, ingridients, img_paths, p])
+        # make prediction into words
+
+        data = pd.DataFrame(data, columns = ['title', 'instructions', 'ingredients', 'img_paths', 'predicted_ingredients'])
+        
+        data['predicted_ingredients_unique'] = data['predicted_ingredients'].apply(
+            lambda x: sorted(list(set(x))))
+        data['ing_sentence'] = data['ingredients'].apply(lambda x: (' '.join(x)).lower())        
+        data['pred_ing_sentence'] = data['predicted_ingredients_unique'].apply(
+            lambda x: (' '.join(x)).lower())
+        
+        # calculate BLEU scores
+        data['bleu1'] = data.apply(lambda x: bleu1(x['ing_sentence'], x['pred_ing_sentence']), axis = 1)
+        data['bleu4'] = data.apply(lambda x: bleu4(x['ing_sentence'], x['pred_ing_sentence']), axis = 1)
+        
+        # jaccard index
+        data['jaccard'] = data.apply(lambda x: jaccard(x['ingredients'], x['predicted_ingredients']), axis = 1)
+                                     
+        
+        return data
+        
+        
     def return_example(self, use_best_model=True, mode='stochastic', gamma=0.1):
         ''' you can specify mode and visualize  '''
         self.__model.eval()
@@ -172,34 +258,13 @@ class ModelHandler(object):
                 target = output_dict[self.__model.input_outputs['output'][0]] # only 1 output            
                 _, pred = self.__model.predict(input_dict, mode = mode, r = gamma) 
                 pred = pred.detach().cpu().numpy()
-                pred_word = np.vectorize(lambda i: self.indg_vocab.idx2word[i])(pred)
+                
                 
                 break
             
-            data = []
+            data = self.get_raw_data(ann_ids, pred)
                 
-            # get raw data
-            for i, ann_id in enumerate(ann_ids):
-                title,  ingridients, instructions,img_paths = self.test_dataset.get_raw_data(ann_id)
-                p = pred_word[i]
-                
-                # find <start> and <end> token and extract in between
-                try:
-                    end = p.index('<end>')
-                                  
-                except:
-                    end = len(p)
-                try:
-                    start = p.index('<start>')
-                except:
-                    start = 0
-                
-                
-                
-                data.append([title, instructions, ingridients, img_paths, p])
-            # make prediction into words
             
-            data = pd.DataFrame(data, columns = ['title', 'instructions', 'ingredients', 'img_paths', 'predicted_ingredients'])
             # use ann_id to extract images
         return data
 
@@ -211,7 +276,22 @@ class ModelHandler(object):
         
         return self.__model
     
+    def index2binary(self, word_index, n_ingredients):
+        ''' convert [2,5,9,0] to binary matrix, for classification metrics calculation 
+        word_index = [n_batch, max_len]
+        return [n_batch, n_ingredients]
+        '''
+        batch_size, max_len = word_index.shape
+        binary_matrix = np.zeros((batch_size, n_ingredients))
+        j = word_index.flatten().cpu()
+        i = np.stack([np.arange(batch_size)]*max_len, axis = 1).flatten()
+        
+        binary_matrix[i,j] = 1
+        
+        return binary_matrix
+        
     def test(self, use_best_model=True):
+        ''' return classification metric, BLEU score, and other quanlitative metrics '''
         self.__model.eval()
         
         if use_best_model: # use those from early stop
@@ -226,27 +306,37 @@ class ModelHandler(object):
         with torch.no_grad():
             b1s = []
             b4s = []
-            for iter_, (images, title, ing_binary, ing, ins, img_id) in enumerate(self.__test_loader):
+            js = []
+            for iter_, (images, title, ing_binary, ing, ins, ann_ids) in enumerate(self.__test_loader):
                 
                 input_dict, output_dict = self.get_input_and_target(images, title, ing_binary, ing, ins)
                 target = output_dict[self.__model.input_outputs['output'][0]] # only 1 output            
-                pred = self.__model(input_dict)
+                pred, pred_word_index = self.__model.predict(input_dict)
                 
+                # Calculate loss
                 test_loss = self.__criterion(pred, target)
+                if self.weighted:
+                    test_loss = (test_loss*self.class_weight).mean()
+                
                 test_loss_epoch.append(test_loss.item())
                 
                 
-
-                if iter_ % self.verbose_freq == 0:
-                    print(f'batch{iter_}, {test_loss}')
-                
-                evl=calculate_metrics(pred.cpu().detach().numpy(), ingt.cpu().detach().numpy(), self.indg_vocab)
+                # F1 score and such
+                binary_matrix = self.index2binary(pred_word_index, ing_binary.shape[1])
+                evl=calculate_metrics(binary_matrix, ing_binary.cpu().detach().numpy(), self.indg_vocab)
                 evl = evl.replace(0, np.nan) # when no class is there
                 scores.append(evl.values)
 
                 
-                # TODO:  class specific precision and recall
+                # BLEU score
+                raw_data = self.get_raw_data(ann_ids, pred_word_index.detach().cpu().numpy())
+                b1s.append(raw_data['bleu1'].mean())
+                b4s.append(raw_data['bleu4'].mean())
+                js.append(raw_data['jaccard'].mean())
                 
+                
+                   
+        
         mean_test_loss = np.mean(test_loss_epoch)
         mean_evl = np.nanmean(np.stack(scores), axis = 0)
         evl_df = pd.DataFrame(mean_evl, index = evl.index, columns = evl.columns)
@@ -254,8 +344,10 @@ class ModelHandler(object):
         
         result_str = "Test Performance: Loss: {}".format(mean_test_loss)
         self.__log(result_str)
-
-        return mean_test_loss, mean_evl
+        stat_df = pd.DataFrame([[mean_test_loss, np.mean(b1s), np.mean(b4s), np.mean(js)]], 
+                               columns = ['loss', 'bleu1', 'bleu4', 'jaccard'])
+        stat_df.to_csv(os.path.join(self.__experiment_dir, f'scores_{self.__current_epoch}.csv'))
+        return mean_test_loss, mean_evl, np.mean(b1s), np.mean(b4s), np.mean(js)
 
 
     def __save_model(self):

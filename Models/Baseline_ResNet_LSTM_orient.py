@@ -5,7 +5,7 @@ import math
 import torch.nn as nn
 
 from torchvision import models
-from model_utils import LossFeature
+
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from glove_utils.glove import *
 
@@ -52,7 +52,7 @@ class Baseline_ResNet_LSTM(nn.Module):
 
         assert ing_vocab_size!=0
         
-        print('orient')
+        print('orient no teacher')
         
         #Encoder
         self.image_encoder = models.resnet50(pretrained=True)
@@ -92,74 +92,97 @@ class Baseline_ResNet_LSTM(nn.Module):
     def forward(self, input, mask = None, fine_tune=False):
         # https://learnopencv.com/multi-label-image-classification-with-pytorch-image-tagging/
         # I dont have to fine tune it
-        image = input['image']
-        ingredients = input['ingredient']
-        with torch.no_grad():
-            image = self.image_encoder(image)  # batchsize, 2048
+#         image = input['image']
+#         ingredients = input['ingredient']
+#         with torch.no_grad():
+#             image = self.image_encoder(image)  # batchsize, 2048
 
-        init_embed = self.graph_to_embedding(image).unsqueeze(dim=1)  # [batch_size, 1, embed_size]
-        ingredients = self.word_embeddings(ingredients)  # [batch_size, 18, embed_size]
+#         init_embed = self.graph_to_embedding(image).unsqueeze(dim=1)  # [batch_size, 1, embed_size]
+#         ingredients = self.word_embeddings(ingredients)  # [batch_size, 18, embed_size]
 
-        # concat embeds
-        inputs = torch.cat((init_embed, ingredients), axis=1) #[batch_size, 19, embed_size]
-        inputs = torch.permute(inputs, (1,0,2)) #[19, batch_size, embed_size]
-        # lstm_out, hidden = self.ingredient_decoder(inputs)
+#         # concat embeds
+#         inputs = torch.cat((init_embed, ingredients), axis=1) #[batch_size, 19, embed_size]
+#         inputs = torch.permute(inputs, (1,0,2)) #[19, batch_size, embed_size]
+#         # lstm_out, hidden = self.ingredient_decoder(inputs)
         
-        bptt = inputs.shape[0]
-        src_mask = generate_square_subsequent_mask(bptt).to('cuda:0')
+#         bptt = inputs.shape[0]
         
-        inputs = self.pos_encoder(inputs)
-        output = self.transformer_encoder(inputs, mask = src_mask)
+#         src_mask = generate_square_subsequent_mask(bptt).to('cuda:0')
+#         print(f'mask_shape {src_mask.shape}')
+        
+        
+#         inputs = self.pos_encoder(inputs)
+#         output = self.transformer_encoder(inputs, mask = src_mask)
 
-        self.lstm_feats = torch.permute(self.hidden_to_word(output), (1,0,2))  # perform learn Wh+b # [batch_size, seq_len, ntoken]
+#         self.lstm_feats = torch.permute(self.hidden_to_word(output), (1,0,2))  # perform learn Wh+b # [batch_size, seq_len, ntoken]
         
         
-        decoder_out = nn.functional.softmax(self.lstm_feats[:, :-1, :], dim=2)  # the last prediction makes no sense
-        ing_prob = torch.amax(decoder_out, dim=1)
+#         decoder_out = nn.functional.softmax(self.lstm_feats[:, :-1, :], dim=2)  # the last prediction makes no sense
+#         ing_prob = torch.amax(decoder_out, dim=1)
+
+        # train with sampling
+        ing_prob, word_idx = self.predict(input, mode = 'deterministic', bptt = input['ingredient'].shape[1])
         return ing_prob
-    def sample(self, mode = 'stochastic', r = 0.9):
-        if mode == 'deterministic':
-            softmax_out = nn.functional.softmax(self.lstm_feats[:, :-1, :], dim=2) 
-            words_index = torch.argmax(softmax_out, dim=2)
-
-        else:
-            # make weighted softmax
-            weighted_out = self.lstm_feats / r
-
-            softmax_out = nn.functional.softmax(weighted_out[:, :-1, :], dim=2) # 0: batch_size, 1: sentence len 2
-            predicted_words = []
-            # sample next word randomly
-            for slen in range(softmax_out.shape[1]):
-                slice_ = softmax_out[:, slen, :].squeeze(1)
-                next_word = torch.multinomial(slice_, num_samples=1).squeeze(1)
-
-                predicted_words.append(next_word)
-            words_index = torch.stack(predicted_words, dim = 1)
-        return words_index
-
     
     
-    def predict(self, input,  mode = 'stochastic', r = 0.9):
+    def predict(self, input,  mode = 'stochastic', r = 0.9, bptt = 20):
         ''' generate text '''
         
         
         image = input['image']
-        ingredients = input['ingredient']
-        bptt = ingredients.shape[0]
         
-        src_mask = generate_square_subsequent_mask(bptt).to('cuda:0')
+        with torch.no_grad():
+            image = self.image_encoder(image)  # batchsize, 2048
+
+        img_embed = self.graph_to_embedding(image).unsqueeze(dim=1) # need to append to this
         
+        pred_embed = [img_embed]
+        pred_word_idx = []
+        decoder_out = []
         
-        
+        for i in range(bptt):
+            # stack along time
+            if i == 0:
+                inputs = img_embed
+            else:
+                inputs = torch.cat(pred_embed, dim = 1)
+                
             
-        batch_size = ingredients.shape[0]
-        if batch_size != bptt:
-            src_mask = src_mask[:batch_size, :batch_size]
-        ing_prob = self.forward(input, mask = src_mask)
+            # make it work as it should be
+            inputs = torch.permute(inputs, (1,0,2))
+            
+            output = self.transformer_encoder(inputs)[-1, :, :].unsqueeze(0) # getting the last perdiction
+            
+            
+            lstm_feats = torch.permute(self.hidden_to_word(output), (1,0,2)) # [batch_size, seq_len = 1, n_indg]
+            
+            if mode == 'deterministic':
+                softmax_out = nn.functional.softmax(lstm_feats, dim=2).squeeze(1) # [batch_size, seq_len = 1, n_indg]
+                
+                word_index = torch.argmax(softmax_out, dim=1).unsqueeze(1)
+                
+
+            else:
+                # make weighted softmax
+                weighted_out = lstm_feats / r
+                softmax_out = nn.functional.softmax(weighted_out, dim=2).squeeze(1) # # [batch_size, seq_len = 1, n_indg]
+                
+                word_index = torch.multinomial(softmax_out, num_samples=1) # [make batch_size, n_indg], output [batch_size]
+                
+            # make the word index into embedding
+            #print('softmax out', softmax_out.shape)
+            decoder_out.append(softmax_out)
+            pred_word_idx.append(word_index)
+            new_embed = self.word_embeddings(word_index) 
+
+            pred_embed.append(new_embed)
         
-        sampled_word = self.sample(mode = mode, r = r)
-        
-        
+        sampled_word = torch.cat(pred_word_idx, dim = 1)
+        decoder_out = torch.stack(decoder_out, dim = 1) # stack [batch_size, n_indg] along dim 1 (seq_len)
+        #print('decoder out', decoder_out.shape)
+            
+        ing_prob = torch.amax(decoder_out, dim=1)
+
         return ing_prob, sampled_word
         
     def get_input_and_target_feature(self):
@@ -170,6 +193,6 @@ class Baseline_ResNet_LSTM(nn.Module):
             }
         return self.input_outputs
     
-    def get_loss_criteria(self):
+    def get_loss_criteria(self, **kwargs):
         ''' return the loss class, and what should be the "label" '''
-        return torch.nn.BCELoss()
+        return torch.nn.BCELoss(**kwargs)
