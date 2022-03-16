@@ -177,7 +177,6 @@ class ModelHandler(object):
             ingr_loss = self.__criterion(ingr_probs, target_one_hot_smooth)
             ingr_loss = torch.mean(ingr_loss, dim=-1)
 
-            train_loss_epoch.append(ingr_loss.item())
 
 
             target_eos = ((target_ingrs == 2) ^ (target_ingrs == self.pad_value))
@@ -198,6 +197,7 @@ class ModelHandler(object):
             #     training_loss = (training_loss*self.class_weight).mean()
                 
             # train_loss_epoch.append(training_loss.item())
+            train_loss_epoch.append(training_loss)
 
             if i % self.verbose_freq == 0:
                 print(f'batch{i}, {training_loss}')
@@ -215,14 +215,37 @@ class ModelHandler(object):
         with torch.no_grad():
             for i, (images, title, ing_binary, ing, ins, img_id) in enumerate(self.__val_loader):
                 input_dict, output_dict = self.get_input_and_target(images, title, ing_binary, ing, ins)
-                target = output_dict[self.__model.input_outputs['output'][0]] # only 1 output            
-                pred = self.__model(input_dict)
+                target_ingrs = output_dict[self.__model.input_outputs['output'][0]] # only 1 output
+                ingr_probs, ing_idx, eos = self.__model(input_dict)
 
 
-                val_loss = self.__criterion(pred, target)
+                # target_ingrs = target['ingredient']
+                target_one_hot_smooth = label2onehot(target_ingrs, len(self.indg_vocab))
+                target_one_hot_smooth[target_one_hot_smooth == 1] = (1-self.label_smoothing)
+                target_one_hot_smooth[target_one_hot_smooth == 0] = self.label_smoothing / target_one_hot_smooth.size(-1)
+
+                ingr_loss = self.__criterion(ingr_probs, target_one_hot_smooth)
+                ingr_loss = torch.mean(ingr_loss, dim=-1)
+
+
+                target_eos = ((target_ingrs == 2) ^ (target_ingrs == self.pad_value))
+                eos_pos = (target_ingrs == 0)
+                eos_head = ((target_ingrs != self.pad_value) & (target_ingrs != 0))
+                eos_loss = self.crit_eos(eos, target_eos.float())
+
+                mult = 1/2
+                # eos loss is only computed for timesteps <= t_eos and equally penalizes 0s and 1s
+                eos_loss = mult*(eos_loss * eos_pos.float()).sum(1) / (eos_pos.float().sum(1) + 1e-6) + \
+                                    mult*(eos_loss * eos_head.float()).sum(1) / (eos_head.float().sum(1) + 1e-6)
+                
+                ingr_loss = ingr_loss.mean()
+                eos_loss = eos_loss.mean()
+                val_loss = 0.8 * ingr_loss + 0.2*eos_loss
+                
+
                 if self.weighted:
                     val_loss = (val_loss*self.class_weight).mean()
-                val_loss_epoch.append(val_loss.item())
+                val_loss_epoch.append(val_loss)
 
         return np.mean(val_loss_epoch)
 
