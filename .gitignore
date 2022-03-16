@@ -10,3 +10,4 @@ data/
 *.pickle
 savedVocab
 savedIngdVocab
+experiment_data/
