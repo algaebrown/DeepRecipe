@@ -197,7 +197,7 @@ class ModelHandler(object):
             #     training_loss = (training_loss*self.class_weight).mean()
                 
             # train_loss_epoch.append(training_loss.item())
-            train_loss_epoch.append(training_loss)
+            train_loss_epoch.append(training_loss.item())
 
             if i % self.verbose_freq == 0:
                 print(f'batch{i}, {training_loss}')
@@ -245,7 +245,7 @@ class ModelHandler(object):
 
                 if self.weighted:
                     val_loss = (val_loss*self.class_weight).mean()
-                val_loss_epoch.append(val_loss)
+                val_loss_epoch.append(val_loss.item())
 
         return np.mean(val_loss_epoch)
 
