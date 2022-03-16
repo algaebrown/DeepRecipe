@@ -165,7 +165,7 @@ class ModelHandler(object):
             self.__optimizer.zero_grad()
             
             input_dict, output_dict = self.get_input_and_target(images, title, ing_binary, ing, ins)
-            target_ingrs = output_dict[self.__model.input_outputs['output'][0]] # only 1 output            
+            target_ingrs = output_dict[self.__model.input_outputs['output'][0]] # only 1 output
             ingr_probs, ing_idx, eos = self.__model(input_dict, fine_tune=fine_tune)
 
 
@@ -190,7 +190,6 @@ class ModelHandler(object):
             eos_loss = mult*(eos_loss * eos_pos.float()).sum(1) / (eos_pos.float().sum(1) + 1e-6) + \
                                  mult*(eos_loss * eos_head.float()).sum(1) / (eos_head.float().sum(1) + 1e-6)
             
-
             ingr_loss = ingr_loss.mean()
             eos_loss = eos_loss.mean()
             training_loss = 0.8 * ingr_loss + 0.2*eos_loss
@@ -356,41 +355,13 @@ class ModelHandler(object):
                 input_dict, output_dict = self.get_input_and_target(images, title, ing_binary, ing, ins)
                 target = output_dict[self.__model.input_outputs['output'][0]] # only 1 output            
                 ingr_probs, pred_word_index, eos = self.__model.predict(input_dict)
-                
-
-                
-                losses['ingr_loss'] = ingr_loss
-
-                # cardinality penalty
-                losses['card_penalty'] = torch.abs((ingr_probs*target_one_hot).sum(1) - target_one_hot.sum(1)) + \
-                                        torch.abs((ingr_probs*(1-target_one_hot)).sum(1))
-
-                eos_loss = self.crit_eos(eos, target_eos.float())
-
-                mult = 1/2
-                # eos loss is only computed for timesteps <= t_eos and equally penalizes 0s and 1s
-                losses['eos_loss'] = mult*(eos_loss * eos_pos.float()).sum(1) / (eos_pos.float().sum(1) + 1e-6) + \
-                                    mult*(eos_loss * eos_head.float()).sum(1) / (eos_head.float().sum(1) + 1e-6)
-                # iou
-                pred_one_hot = label2onehot(ingr_ids, self.pad_value)
-                # iou sample during training is computed using the true eos position
-                losses['iou'] = softIoU(pred_one_hot, target_one_hot)
-
-
-
-
-
-
-
-
-
 
                 # Calculate loss
-                # test_loss = self.__criterion(pred, target)
-                # if self.weighted:
-                #     test_loss = (test_loss*self.class_weight).mean()
+                test_loss = self.__criterion(ingr_probs, target)
+                if self.weighted:
+                    test_loss = (test_loss*self.class_weight).mean()
                 
-                # test_loss_epoch.append(test_loss.item())
+                test_loss_epoch.append(test_loss.item())
                 
                 
                 # F1 score and such
