@@ -320,14 +320,16 @@ class ModelHandler(object):
             for iter_, (images, title, ing_binary, ing, ins, ann_ids) in enumerate(self.__test_loader):
                 
                 input_dict, output_dict = self.get_input_and_target(images, title, ing_binary, ing, ins)
-                target = output_dict[self.__model.input_outputs['output'][0]] # only 1 output            
-                _, pred = self.__model.predict(input_dict, mode = mode, r = gamma) 
-                pred = pred.detach().cpu().numpy()
+                target_ingrs = output_dict[self.__model.input_outputs['output'][0]] # only 1 output
+                ingr_probs, ing_idx, eos = self.__model(input_dict)
+
+
+                ing_idx = ing_idx.detach().cpu().numpy()
                 
                 
                 break
             
-            data = self.get_raw_data(ann_ids, pred)
+            data = self.get_raw_data(ann_ids, ing_idx)
                 
             
             # use ann_id to extract images
